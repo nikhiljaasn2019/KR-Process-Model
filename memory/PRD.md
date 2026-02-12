@@ -55,3 +55,32 @@ Build an interactive "Conviction Prototype" web app demo for BPCL Kochi Refinery
 2. Add more sophisticated projection models
 3. Implement data persistence with MongoDB
 4. Add user preferences/settings
+
+---
+## Update: Day Scenario Selector Feature (Jan 2026)
+
+### New Features Added:
+1. **Day Selector Dropdown** on Mission Control page
+   - 7 predefined day scenarios: 1, 18, 35, 55, 70, 90, 105
+   - Color-coded risk levels: Low (green), Medium (amber), High (red), Critical (dark red)
+   - Toast notifications with descriptions when switching
+
+2. **Progressive Scenario System**
+   - Day 1: Fresh start - all metrics optimal, 0 actions, 5-15% risk
+   - Day 18: Early run - minor fluctuations, low risk
+   - Day 35: Mid run - attention needed, medium risk
+   - Day 55: Late-mid run - multiple parameters trending
+   - Day 70: Late run - active intervention required, high risk
+   - Day 90: Critical phase - maximum vigilance, high risk
+   - Day 105: Final stretch - all hands on deck, critical risk
+
+3. **Action Card Impact Section**
+   - Risk reduction percentages (7-day, 14-day, 30-day)
+   - Productivity impact explanation
+   - Run length impact explanation
+   - Urgency badges (Critical/High/Medium)
+   - Confidence level indicator
+
+### API Endpoints Added:
+- GET /api/demo/available-days - List of day scenarios
+- POST /api/demo/set-day - Switch to specific day scenario
