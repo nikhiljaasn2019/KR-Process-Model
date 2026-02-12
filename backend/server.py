@@ -970,6 +970,34 @@ async def demo_inject_missing():
     """Simulate a missing metric"""
     return {"message": "Missing metric injected (simulation placeholder)"}
 
+@api_router.post("/demo/set-day")
+async def demo_set_day(request: DayScenarioRequest):
+    """Set the simulation to a specific day scenario"""
+    description = sim_state.set_day_scenario(request.day)
+    check_deviations()
+    return {
+        "message": f"Set to Day {request.day}",
+        "current_day": sim_state.current_day,
+        "description": description,
+        "metrics": sim_state.current_metrics,
+        "actions_count": len([a for a in sim_state.actions.values() if a["status"] not in ["Done", "Not feasible"]])
+    }
+
+@api_router.get("/demo/available-days")
+async def get_available_days():
+    """Get list of available day scenarios for the dropdown"""
+    return {
+        "days": [
+            {"day": 1, "label": "Day 1 - Fresh Start", "risk_level": "Low"},
+            {"day": 18, "label": "Day 18 - Early Run", "risk_level": "Low"},
+            {"day": 35, "label": "Day 35 - Mid Run", "risk_level": "Medium"},
+            {"day": 55, "label": "Day 55 - Late-Mid Run", "risk_level": "Medium"},
+            {"day": 70, "label": "Day 70 - Late Run", "risk_level": "High"},
+            {"day": 90, "label": "Day 90 - Critical Phase", "risk_level": "High"},
+            {"day": 105, "label": "Day 105 - Final Stretch", "risk_level": "Critical"}
+        ]
+    }
+
 # Include router
 app.include_router(api_router)
 
