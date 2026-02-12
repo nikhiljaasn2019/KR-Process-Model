@@ -312,7 +312,7 @@ def check_deviations():
                     "time_window": "Last 6 hours"
                 },
                 "evidence": [
-                    f"Current: {dev['current_value']:.2f if isinstance(dev['current_value'], float) else dev['current_value']} {dev['unit']}",
+                    f"Current: {dev['current_value']:.2f} {dev['unit']}" if isinstance(dev['current_value'], float) else f"Current: {dev['current_value']} {dev['unit']}",
                     f"Golden band ({get_phase(sim_state.current_day)} phase): {dev['band_str']} {dev['unit']}",
                     f"Run day: {sim_state.current_day}"
                 ],
