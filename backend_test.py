@@ -156,6 +156,91 @@ class KRAARunHealthAPITester:
             print(f"   Confidence: {fresh_data.get('confidence', 'N/A')}")
             print(f"   Stale metrics: {len(fresh_data.get('stale_metrics', []))}")
 
+    def test_day_scenario_selector(self):
+        """Test day scenario selector feature - NEW FEATURE"""
+        print("\n=== Testing Day Scenario Selector Feature ===")
+        
+        # Test available days endpoint
+        success, days_data = self.run_test("Get Available Days", "GET", "demo/available-days", 200)
+        if success and days_data:
+            days = days_data.get('days', [])
+            print(f"   Available days count: {len(days)}")
+            expected_days = [1, 18, 35, 55, 70, 90, 105]
+            actual_days = [d['day'] for d in days]
+            print(f"   Expected days: {expected_days}")
+            print(f"   Actual days: {actual_days}")
+            
+            # Verify all expected days are present
+            missing_days = set(expected_days) - set(actual_days)
+            if missing_days:
+                print(f"   ❌ Missing days: {missing_days}")
+            else:
+                print(f"   ✅ All expected days present")
+        
+        # Test switching to different day scenarios
+        test_days = [1, 70, 90, 105]  # Test key scenarios
+        for day in test_days:
+            success, day_data = self.run_test(
+                f"Set Day {day} Scenario", 
+                "POST", 
+                "demo/set-day",
+                200,
+                {"day": day}
+            )
+            if success and day_data:
+                print(f"   Day {day} - Current day: {day_data.get('current_day', 'N/A')}")
+                print(f"   Day {day} - Description: {day_data.get('description', 'N/A')}")
+                print(f"   Day {day} - Actions count: {day_data.get('actions_count', 'N/A')}")
+                
+                # Verify day-specific characteristics
+                if day == 1:
+                    # Day 1 should have low risks, 0 actions
+                    expected_actions = 0
+                    if day_data.get('actions_count', 0) == expected_actions:
+                        print(f"   ✅ Day 1: Correct low action count ({expected_actions})")
+                    else:
+                        print(f"   ❌ Day 1: Expected {expected_actions} actions, got {day_data.get('actions_count', 0)}")
+                
+                elif day == 70:
+                    # Day 70 should have high risks, multiple actions
+                    if day_data.get('actions_count', 0) >= 5:
+                        print(f"   ✅ Day 70: High action count as expected")
+                    else:
+                        print(f"   ❌ Day 70: Expected high action count, got {day_data.get('actions_count', 0)}")
+                
+                elif day == 90:
+                    # Day 90 should have high risks, multiple active actions
+                    if day_data.get('actions_count', 0) >= 5:
+                        print(f"   ✅ Day 90: High action count as expected")
+                    else:
+                        print(f"   ❌ Day 90: Expected high action count, got {day_data.get('actions_count', 0)}")
+        
+        # Test actions with impact data after setting to a high-risk day
+        print(f"\n   Testing action impact data on Day 70...")
+        self.run_test("Set Day 70 for Impact Test", "POST", "demo/set-day", 200, {"day": 70})
+        
+        success, actions_data = self.run_test("Get Actions with Impact", "GET", "actions", 200)
+        if success and actions_data:
+            actions = actions_data.get('actions', [])
+            if actions:
+                action = actions[0]
+                impact = action.get('impact', {})
+                print(f"   Action ID: {action.get('id', 'N/A')}")
+                print(f"   Urgency: {impact.get('urgency', 'N/A')}")
+                print(f"   Risk reduction 7d: {impact.get('risk_reduction', {}).get('7_day', 'N/A')}%")
+                print(f"   Risk reduction 14d: {impact.get('risk_reduction', {}).get('14_day', 'N/A')}%")
+                print(f"   Risk reduction 30d: {impact.get('risk_reduction', {}).get('30_day', 'N/A')}%")
+                print(f"   Productivity impact: {impact.get('productivity_impact', 'N/A')[:50]}...")
+                print(f"   Run length impact: {impact.get('run_length_impact', 'N/A')[:50]}...")
+                
+                # Verify impact data structure
+                if impact.get('risk_reduction') and impact.get('urgency'):
+                    print(f"   ✅ Action impact data structure correct")
+                else:
+                    print(f"   ❌ Action impact data missing or incomplete")
+            else:
+                print(f"   ⚠️  No actions found for impact testing")
+
     def test_demo_controls(self):
         """Test demo control endpoints"""
         print("\n=== Testing Demo Controls ===")
