@@ -1,0 +1,173 @@
+{
+  "phases": {
+    "early": { "start": 1, "end": 7, "label": "Early-run (Day 1-7)" },
+    "mid": { "start": 8, "end": 30, "label": "Mid-run (Day 8-30)" },
+    "late": { "start": 31, "end": 999, "label": "Late-run (Day 31+)" }
+  },
+  "metrics": {
+    "cw_inlet_temp": {
+      "name": "CW Inlet Temperature",
+      "unit": "°C",
+      "bands": {
+        "early": { "max": 28.5, "warning_offset": 0.3 },
+        "mid": { "max": 29.0, "warning_offset": 0.3 },
+        "late": { "max": 29.5, "warning_offset": 0.3 }
+      },
+      "protects": "Run-length",
+      "action_template": {
+        "title": "CW Inlet Temperature Exceedance",
+        "checklist": [
+          "Check cooling tower fan operation and adjust speed",
+          "Verify CW pump discharge pressure and flow rate",
+          "Inspect CW basin level and makeup water supply",
+          "Review ambient conditions and adjust setpoints if needed",
+          "Coordinate with utilities for additional cooling capacity"
+        ],
+        "expected_effect": "Restore CW inlet to <{max}°C within 4-6 hours"
+      }
+    },
+    "inhibitor_continuity": {
+      "name": "Inhibitor Dosing Continuity",
+      "unit": "% uptime",
+      "bands": {
+        "early": { "min": 99.5, "warning_offset": 0.3 },
+        "mid": { "min": 99.5, "warning_offset": 0.3 },
+        "late": { "min": 99.5, "warning_offset": 0.3 }
+      },
+      "protects": "Both",
+      "action_template": {
+        "title": "Inhibitor Dosing Interruption",
+        "checklist": [
+          "Verify inhibitor tank level and refill if below 20%",
+          "Check dosing pump operation and calibration",
+          "Inspect injection point for blockages or leaks",
+          "Confirm flow meter readings match expected rates",
+          "Review alarm logs for root cause identification"
+        ],
+        "expected_effect": "Restore continuous dosing to ≥99.5% within 2 hours"
+      }
+    },
+    "column_dp_index": {
+      "name": "Column ΔP Index",
+      "unit": "normalized",
+      "bands": {
+        "early": { "max": 35, "warning_offset": 5 },
+        "mid": { "max": 35, "warning_offset": 5 },
+        "late": { "max": 45, "warning_offset": 5 }
+      },
+      "protects": "Productivity",
+      "action_template": {
+        "title": "Column ΔP Index Elevated",
+        "checklist": [
+          "Review column internals inspection schedule",
+          "Check feed quality and contaminant levels",
+          "Verify reflux ratio and column loading",
+          "Assess tray/packing condition from recent data",
+          "Plan cleaning or maintenance window if trend continues"
+        ],
+        "expected_effect": "Stabilize ΔP Index below {max} within 12-24 hours"
+      }
+    },
+    "reactor_temp_oscillation": {
+      "name": "Reactor Temp Oscillation",
+      "unit": "°C p-p",
+      "bands": {
+        "early": { "max": 0.8, "warning_offset": 0.2 },
+        "mid": { "max": 0.8, "warning_offset": 0.2 },
+        "late": { "max": 1.0, "warning_offset": 0.2 }
+      },
+      "protects": "Both",
+      "action_template": {
+        "title": "Reactor Temperature Oscillation High",
+        "checklist": [
+          "Check reactor cooling system operation",
+          "Verify temperature controller tuning parameters",
+          "Inspect feed temperature and flow stability",
+          "Review catalyst bed condition indicators",
+          "Adjust control loop settings if needed"
+        ],
+        "expected_effect": "Reduce oscillation to <{max}°C p-p within 6-8 hours"
+      }
+    },
+    "aa_dimer": {
+      "name": "AA Dimer",
+      "unit": "wt%",
+      "bands": {
+        "early": { "max": 0.30, "warning_offset": 0.05 },
+        "mid": { "max": 0.30, "warning_offset": 0.05 },
+        "late": { "max": 0.35, "warning_offset": 0.05 }
+      },
+      "protects": "Productivity",
+      "action_template": {
+        "title": "AA Dimer Level Elevated",
+        "checklist": [
+          "Review column bottom temperature setpoint",
+          "Check reboiler duty and heat transfer",
+          "Verify residence time in bottom section",
+          "Assess product draw-off rate adjustments",
+          "Schedule additional lab sampling for trend confirmation"
+        ],
+        "expected_effect": "Reduce dimer level to <{max} wt% within 24-48 hours"
+      }
+    },
+    "mehq": {
+      "name": "MeHQ",
+      "unit": "ppm",
+      "bands": {
+        "early": { "min": 180, "warning_offset": 10 },
+        "mid": { "min": 180, "warning_offset": 10 },
+        "late": { "min": 180, "warning_offset": 10 }
+      },
+      "protects": "Both",
+      "action_template": {
+        "title": "MeHQ Level Low",
+        "checklist": [
+          "Verify MeHQ dosing pump operation",
+          "Check MeHQ tank inventory level",
+          "Confirm injection point flow and pressure",
+          "Review recent lab results for trend",
+          "Increase dosing rate if below threshold"
+        ],
+        "expected_effect": "Restore MeHQ to ≥180 ppm within 4-6 hours"
+      }
+    },
+    "excursion_count": {
+      "name": "Excursion Count",
+      "unit": "events/24h",
+      "bands": {
+        "early": { "max": 3, "warning_offset": 1 },
+        "mid": { "max": 3, "warning_offset": 1 },
+        "late": { "max": 3, "warning_offset": 1 }
+      },
+      "protects": "Run-length",
+      "action_template": {
+        "title": "Multiple Process Excursions Detected",
+        "checklist": [
+          "Review alarm summary for common patterns",
+          "Identify root cause of threshold violations",
+          "Check control system setpoints and limits",
+          "Verify instrument calibration accuracy",
+          "Implement corrective actions for top offenders"
+        ],
+        "expected_effect": "Reduce excursion rate to ≤3/24h within 12 hours"
+      }
+    }
+  },
+  "productivity_risk": {
+    "weights": {
+      "column_dp_index": 0.4,
+      "excursion_count": 0.35,
+      "cw_inlet_temp": 0.25
+    },
+    "thresholds": {
+      "stable": 0.3,
+      "at_risk": 0.6
+    }
+  },
+  "projection_settings": {
+    "golden_run_days": 111,
+    "golden_run_window": "02-Dec-2024 to 23-Mar-2025",
+    "confidence_decay_hours": 6,
+    "stale_threshold_hours": 2
+  }
+}
