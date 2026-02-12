@@ -513,6 +513,9 @@ def check_deviations():
             cv = dev['current_value']
             current_val_str = f"{cv:.2f}" if isinstance(cv, float) else str(cv)
             
+            # Calculate impact estimates based on deviation severity and metric type
+            impact = calculate_action_impact(dev["metric_key"], dev["current_value"], dev["band"], sim_state.current_day)
+            
             action = {
                 "id": action_id,
                 "title": dev["action_template"]["title"],
@@ -531,6 +534,7 @@ def check_deviations():
                 ],
                 "action_checklist": dev["action_template"]["checklist"],
                 "expected_effect": dev["action_template"]["expected_effect"].replace("{max}", str(dev['band'].get('max', ''))).replace("{min}", str(dev['band'].get('min', ''))),
+                "impact": impact,
                 "status": "New",
                 "note": "",
                 "created_at": sim_state.simulated_time.isoformat(),
@@ -539,6 +543,77 @@ def check_deviations():
             sim_state.actions[action_id] = action
     
     return deviations
+
+def calculate_action_impact(metric_key: str, current_value: float, band: dict, current_day: int):
+    """Calculate the impact of taking action on this deviation"""
+    
+    # Define impact mappings for each metric
+    impact_config = {
+        "cw_inlet_temp": {
+            "risk_reduction": {"7d": 8, "14d": 12, "30d": 15},
+            "productivity_impact": "Prevents accelerated fouling, maintains heat transfer efficiency",
+            "run_length_impact": "Each 1°C above band accelerates polymerization by ~3-5%",
+            "urgency": "High" if current_value > (band.get("max", 30) + 1) else "Medium"
+        },
+        "inhibitor_continuity": {
+            "risk_reduction": {"7d": 15, "14d": 20, "30d": 25},
+            "productivity_impact": "Ensures consistent product quality and prevents polymer buildup",
+            "run_length_impact": "Interruptions >30min can initiate irreversible polymerization chains",
+            "urgency": "Critical" if current_value < 98 else "High"
+        },
+        "column_dp_index": {
+            "risk_reduction": {"7d": 5, "14d": 10, "30d": 18},
+            "productivity_impact": "Maintains separation efficiency and throughput capacity",
+            "run_length_impact": "ΔP >50 typically indicates 70%+ fouling, limiting remaining run life",
+            "urgency": "High" if current_value > 50 else "Medium"
+        },
+        "reactor_temp_oscillation": {
+            "risk_reduction": {"7d": 6, "14d": 10, "30d": 14},
+            "productivity_impact": "Stabilizes reaction selectivity and product yield",
+            "run_length_impact": "Oscillation >1.2°C indicates control degradation requiring intervention",
+            "urgency": "Medium"
+        },
+        "aa_dimer": {
+            "risk_reduction": {"7d": 4, "14d": 8, "30d": 12},
+            "productivity_impact": "Preserves product purity and reduces downstream processing load",
+            "run_length_impact": "Dimer >0.4% signals advanced polymerization, typically 2-3 weeks to limit",
+            "urgency": "High" if current_value > 0.38 else "Medium"
+        },
+        "mehq": {
+            "risk_reduction": {"7d": 12, "14d": 18, "30d": 22},
+            "productivity_impact": "Maintains inhibition effectiveness throughout the process",
+            "run_length_impact": "MeHQ <170 ppm creates polymerization risk zones in dead legs",
+            "urgency": "Critical" if current_value < 175 else "High"
+        },
+        "excursion_count": {
+            "risk_reduction": {"7d": 7, "14d": 12, "30d": 16},
+            "productivity_impact": "Reduces process variability and maintains consistent operation",
+            "run_length_impact": "Each excursion adds cumulative stress to the system",
+            "urgency": "Medium"
+        }
+    }
+    
+    config = impact_config.get(metric_key, {
+        "risk_reduction": {"7d": 5, "14d": 8, "30d": 10},
+        "productivity_impact": "Restores parameter to optimal range",
+        "run_length_impact": "Reduces deviation-related stress on system",
+        "urgency": "Medium"
+    })
+    
+    # Adjust based on run day (later in run = higher impact)
+    day_multiplier = 1.0 + (current_day / 111) * 0.5  # Up to 50% more impact late in run
+    
+    return {
+        "risk_reduction": {
+            "7_day": int(config["risk_reduction"]["7d"] * day_multiplier),
+            "14_day": int(config["risk_reduction"]["14d"] * day_multiplier),
+            "30_day": int(config["risk_reduction"]["30d"] * day_multiplier)
+        },
+        "productivity_impact": config["productivity_impact"],
+        "run_length_impact": config["run_length_impact"],
+        "urgency": config["urgency"],
+        "confidence": "High" if current_day < 70 else "Medium"
+    }
 
 def calculate_projections():
     """Calculate run-length projections based on current state"""
