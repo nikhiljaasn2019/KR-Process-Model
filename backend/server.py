@@ -62,6 +62,9 @@ class DemoEventRequest(BaseModel):
     event_type: str
     duration_steps: Optional[int] = 4
 
+class DayScenarioRequest(BaseModel):
+    day: int
+
 class RunRecord(BaseModel):
     run_id: str
     start_ts: str
