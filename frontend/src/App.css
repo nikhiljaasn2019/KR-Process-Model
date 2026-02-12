@@ -966,7 +966,7 @@ h1, h2, h3, h4, h5, h6 {
 /* Demo Control Panel */
 .demo-panel {
   position: fixed;
-  bottom: 1.5rem;
+  bottom: 5rem;
   right: 1.5rem;
   z-index: 100;
 }
