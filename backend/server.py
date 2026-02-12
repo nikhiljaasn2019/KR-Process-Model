@@ -109,7 +109,213 @@ class SimulationState:
         self.actions = {}
         self.timeline_events = []
         self.metrics_history = []
+        self.scenario_mode = False  # Track if we're in a preset scenario
         self.generate_initial_metrics()
+    
+    def set_day_scenario(self, day: int):
+        """Set metrics and state based on predefined day scenarios"""
+        self.current_day = day
+        self.simulated_time = self.current_run_start + timedelta(days=day - 1)
+        self.last_update = datetime.now(timezone.utc)
+        self.scenario_mode = True
+        self.actions = {}
+        self.action_counter = 1
+        self.timeline_events = []
+        
+        # Define scenarios for different days with progressively worsening conditions
+        scenarios = {
+            1: {
+                "metrics": {
+                    "cw_inlet_temp": 27.2,
+                    "inhibitor_continuity": 99.9,
+                    "column_dp_index": 25,
+                    "reactor_temp_oscillation": 0.4,
+                    "aa_dimer": 0.18,
+                    "mehq": 205,
+                    "excursion_count": 0
+                },
+                "events": [],
+                "description": "Fresh start - all systems optimal"
+            },
+            18: {
+                "metrics": {
+                    "cw_inlet_temp": 28.1,
+                    "inhibitor_continuity": 99.6,
+                    "column_dp_index": 30,
+                    "reactor_temp_oscillation": 0.55,
+                    "aa_dimer": 0.24,
+                    "mehq": 195,
+                    "excursion_count": 1
+                },
+                "events": [
+                    {"type": "Minor CW fluctuation", "day": 12, "resolved": True}
+                ],
+                "description": "Early-run stability maintained"
+            },
+            35: {
+                "metrics": {
+                    "cw_inlet_temp": 29.2,
+                    "inhibitor_continuity": 99.3,
+                    "column_dp_index": 38,
+                    "reactor_temp_oscillation": 0.75,
+                    "aa_dimer": 0.29,
+                    "mehq": 188,
+                    "excursion_count": 2
+                },
+                "events": [
+                    {"type": "CW Temperature Spike", "day": 28, "resolved": True},
+                    {"type": "ΔP uptick detected", "day": 32, "resolved": False}
+                ],
+                "description": "Mid-run transition - attention needed"
+            },
+            55: {
+                "metrics": {
+                    "cw_inlet_temp": 29.8,
+                    "inhibitor_continuity": 98.8,
+                    "column_dp_index": 44,
+                    "reactor_temp_oscillation": 0.92,
+                    "aa_dimer": 0.33,
+                    "mehq": 182,
+                    "excursion_count": 3
+                },
+                "events": [
+                    {"type": "CW Temperature Spike", "day": 28, "resolved": True},
+                    {"type": "ΔP uptick detected", "day": 32, "resolved": True},
+                    {"type": "Inhibitor brief interruption", "day": 45, "resolved": True},
+                    {"type": "Dimer rise in lab sample", "day": 52, "resolved": False}
+                ],
+                "description": "Late-mid run - multiple parameters trending"
+            },
+            70: {
+                "metrics": {
+                    "cw_inlet_temp": 30.1,
+                    "inhibitor_continuity": 98.2,
+                    "column_dp_index": 48,
+                    "reactor_temp_oscillation": 1.05,
+                    "aa_dimer": 0.37,
+                    "mehq": 176,
+                    "excursion_count": 4
+                },
+                "events": [
+                    {"type": "CW Temperature Spike", "day": 28, "resolved": True},
+                    {"type": "ΔP uptick detected", "day": 32, "resolved": True},
+                    {"type": "Inhibitor brief interruption", "day": 45, "resolved": True},
+                    {"type": "Dimer rise in lab sample", "day": 52, "resolved": True},
+                    {"type": "CW system strain", "day": 62, "resolved": False},
+                    {"type": "Column ΔP elevated", "day": 67, "resolved": False}
+                ],
+                "description": "Late run - active intervention required"
+            },
+            90: {
+                "metrics": {
+                    "cw_inlet_temp": 30.5,
+                    "inhibitor_continuity": 97.5,
+                    "column_dp_index": 52,
+                    "reactor_temp_oscillation": 1.15,
+                    "aa_dimer": 0.42,
+                    "mehq": 170,
+                    "excursion_count": 5
+                },
+                "events": [
+                    {"type": "CW Temperature Spike", "day": 28, "resolved": True},
+                    {"type": "ΔP uptick detected", "day": 32, "resolved": True},
+                    {"type": "Inhibitor brief interruption", "day": 45, "resolved": True},
+                    {"type": "Dimer rise in lab sample", "day": 52, "resolved": True},
+                    {"type": "CW system strain", "day": 62, "resolved": True},
+                    {"type": "Column ΔP elevated", "day": 67, "resolved": True},
+                    {"type": "Reactor oscillation high", "day": 78, "resolved": False},
+                    {"type": "MeHQ level dropping", "day": 85, "resolved": False},
+                    {"type": "Multiple excursions", "day": 88, "resolved": False}
+                ],
+                "description": "Critical phase - golden target in sight but risks elevated"
+            },
+            105: {
+                "metrics": {
+                    "cw_inlet_temp": 30.8,
+                    "inhibitor_continuity": 96.8,
+                    "column_dp_index": 55,
+                    "reactor_temp_oscillation": 1.25,
+                    "aa_dimer": 0.45,
+                    "mehq": 165,
+                    "excursion_count": 6
+                },
+                "events": [
+                    {"type": "CW Temperature Spike", "day": 28, "resolved": True},
+                    {"type": "ΔP uptick detected", "day": 32, "resolved": True},
+                    {"type": "Inhibitor brief interruption", "day": 45, "resolved": True},
+                    {"type": "Dimer rise in lab sample", "day": 52, "resolved": True},
+                    {"type": "CW system strain", "day": 62, "resolved": True},
+                    {"type": "Column ΔP elevated", "day": 67, "resolved": True},
+                    {"type": "Reactor oscillation high", "day": 78, "resolved": True},
+                    {"type": "MeHQ level dropping", "day": 85, "resolved": True},
+                    {"type": "Multiple excursions", "day": 88, "resolved": True},
+                    {"type": "Critical fouling risk", "day": 98, "resolved": False},
+                    {"type": "Productivity decline detected", "day": 102, "resolved": False}
+                ],
+                "description": "Final stretch - maximum vigilance to reach golden target"
+            }
+        }
+        
+        # Find closest scenario
+        available_days = sorted(scenarios.keys())
+        closest_day = min(available_days, key=lambda x: abs(x - day))
+        scenario = scenarios[closest_day]
+        
+        # Apply scenario metrics
+        self.current_metrics = scenario["metrics"].copy()
+        
+        # Generate timeline events
+        for event in scenario["events"]:
+            self.timeline_events.append({
+                "id": str(uuid.uuid4())[:8],
+                "timestamp": (self.current_run_start + timedelta(days=event["day"] - 1)).isoformat(),
+                "day": event["day"],
+                "event_type": event["type"].lower().replace(" ", "_"),
+                "title": event["type"],
+                "description": f"Event detected at Day {event['day']}",
+                "resolved": event["resolved"],
+                "triggered_actions": []
+            })
+        
+        # Generate metrics history for the scenario
+        self.metrics_history = self._generate_scenario_history(day, scenario)
+        
+        return scenario.get("description", "")
+    
+    def _generate_scenario_history(self, target_day: int, scenario: dict):
+        """Generate plausible metrics history leading up to the current day"""
+        history = []
+        base_metrics = {
+            "cw_inlet_temp": 27.0,
+            "inhibitor_continuity": 99.9,
+            "column_dp_index": 24,
+            "reactor_temp_oscillation": 0.35,
+            "aa_dimer": 0.18,
+            "mehq": 208,
+            "excursion_count": 0
+        }
+        current = scenario["metrics"]
+        
+        # Create interpolated history
+        num_points = min(target_day, 30)  # Max 30 history points
+        for i in range(num_points):
+            day = max(1, target_day - num_points + i + 1)
+            progress = i / max(1, num_points - 1)
+            
+            snapshot = {
+                "timestamp": (self.current_run_start + timedelta(days=day - 1)).isoformat(),
+                "day": day,
+                "cw_inlet_temp": base_metrics["cw_inlet_temp"] + progress * (current["cw_inlet_temp"] - base_metrics["cw_inlet_temp"]) + random.uniform(-0.2, 0.2),
+                "inhibitor_continuity": base_metrics["inhibitor_continuity"] - progress * (base_metrics["inhibitor_continuity"] - current["inhibitor_continuity"]) + random.uniform(-0.1, 0.1),
+                "column_dp_index": base_metrics["column_dp_index"] + progress * (current["column_dp_index"] - base_metrics["column_dp_index"]) + random.uniform(-1, 1),
+                "reactor_temp_oscillation": base_metrics["reactor_temp_oscillation"] + progress * (current["reactor_temp_oscillation"] - base_metrics["reactor_temp_oscillation"]) + random.uniform(-0.05, 0.05),
+                "aa_dimer": base_metrics["aa_dimer"] + progress * (current["aa_dimer"] - base_metrics["aa_dimer"]) + random.uniform(-0.01, 0.01),
+                "mehq": base_metrics["mehq"] - progress * (base_metrics["mehq"] - current["mehq"]) + random.uniform(-2, 2),
+                "excursion_count": int(progress * current["excursion_count"])
+            }
+            history.append(snapshot)
+        
+        return history
         
     def generate_initial_metrics(self):
         # Generate initial stable metrics
