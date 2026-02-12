@@ -1,5 +1,5 @@
-import React, { useContext } from "react";
-import { AppContext } from "../App";
+import React, { useContext, useState, useEffect } from "react";
+import { AppContext, api } from "../App";
 import { useNavigate } from "react-router-dom";
 import { 
   Target, 
@@ -9,16 +9,66 @@ import {
   ChevronRight,
   Shield,
   Activity,
-  ArrowRight
+  ArrowRight,
+  Calendar,
+  ChevronDown
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Progress } from "../components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
+import { toast } from "sonner";
 
 export default function MissionControl() {
-  const { projections, metrics, actions, loading, freshness } = useContext(AppContext);
+  const { projections, metrics, actions, loading, freshness, fetchData } = useContext(AppContext);
   const navigate = useNavigate();
+  const [availableDays, setAvailableDays] = useState([]);
+  const [selectedDay, setSelectedDay] = useState(null);
+  const [switching, setSwitching] = useState(false);
+
+  useEffect(() => {
+    // Fetch available day scenarios
+    const fetchDays = async () => {
+      try {
+        const response = await api.get("/demo/available-days");
+        setAvailableDays(response.data.days);
+      } catch (error) {
+        console.error("Error fetching available days:", error);
+      }
+    };
+    fetchDays();
+  }, []);
+
+  useEffect(() => {
+    if (projections && !selectedDay) {
+      setSelectedDay(projections.current_day.toString());
+    }
+  }, [projections, selectedDay]);
+
+  const handleDayChange = async (value) => {
+    const day = parseInt(value);
+    setSwitching(true);
+    try {
+      const response = await api.post("/demo/set-day", { day });
+      setSelectedDay(value);
+      toast.success(`Switched to Day ${day}`, {
+        description: response.data.description
+      });
+      fetchData();
+    } catch (error) {
+      console.error("Error setting day:", error);
+      toast.error("Failed to switch day scenario");
+    } finally {
+      setSwitching(false);
+    }
+  };
 
   if (loading || !projections) {
     return (
@@ -30,14 +80,58 @@ export default function MissionControl() {
   }
 
   const activeActions = actions?.actions?.filter(a => a.status !== "Done" && a.status !== "Not feasible") || [];
-  const topThreats = activeActions.slice(0, 3);
-  const topActions = activeActions.slice(0, 3);
+  const topThreats = activeActions.slice(0, 5);
+  const topActions = activeActions.slice(0, 5);
 
   const progressPercent = Math.min(100, (projections.current_day / projections.golden_target_days) * 100);
   const projectedPercent = Math.min(100, (projections.projected_total_days / projections.golden_target_days) * 100);
 
+  const getRiskLevelColor = (level) => {
+    switch (level) {
+      case "Low": return "text-emerald-600 bg-emerald-50";
+      case "Medium": return "text-amber-600 bg-amber-50";
+      case "High": return "text-rose-600 bg-rose-50";
+      case "Critical": return "text-rose-700 bg-rose-100";
+      default: return "text-slate-600 bg-slate-50";
+    }
+  };
+
   return (
     <div data-testid="mission-control">
+      {/* Day Selector Header */}
+      <div className="day-selector-container" data-testid="day-selector-container">
+        <div className="day-selector-label">
+          <Calendar size={18} />
+          <span>View Dashboard at Run Day:</span>
+        </div>
+        <Select 
+          value={selectedDay || "1"} 
+          onValueChange={handleDayChange}
+          disabled={switching}
+        >
+          <SelectTrigger className="day-selector-trigger" data-testid="day-selector">
+            <SelectValue placeholder="Select day" />
+          </SelectTrigger>
+          <SelectContent>
+            {availableDays.map((item) => (
+              <SelectItem 
+                key={item.day} 
+                value={item.day.toString()}
+                data-testid={`day-option-${item.day}`}
+              >
+                <div className="day-option">
+                  <span className="day-option-label">{item.label}</span>
+                  <span className={`day-option-risk ${getRiskLevelColor(item.risk_level)}`}>
+                    {item.risk_level}
+                  </span>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {switching && <div className="loading-spinner" style={{ width: 20, height: 20 }}></div>}
+      </div>
+
       {/* KPI Cards */}
       <div className="kpi-grid">
         <KPICard
@@ -160,7 +254,7 @@ export default function MissionControl() {
           {/* Top Threats */}
           <div className="panel-title" style={{ marginBottom: "0.75rem", marginTop: "1.5rem" }}>
             <AlertTriangle size={16} style={{ color: "var(--accent-warning)" }} />
-            Top Threats Right Now
+            Top Threats Right Now ({topThreats.length})
           </div>
           {topThreats.length > 0 ? (
             <div className="threat-list">
@@ -197,7 +291,9 @@ export default function MissionControl() {
               <Activity size={16} />
               Actions Right Now
             </span>
-            <Badge>{activeActions.length} Active</Badge>
+            <Badge variant={activeActions.length > 3 ? "destructive" : activeActions.length > 0 ? "secondary" : "default"}>
+              {activeActions.length} Active
+            </Badge>
           </div>
           
           {topActions.length > 0 ? (
@@ -215,7 +311,7 @@ export default function MissionControl() {
                   <div className="action-preview-content">
                     <div className="action-preview-title">{action.title}</div>
                     <div className="action-preview-meta">
-                      Protects: {action.protects} • {action.trigger.time_window}
+                      Protects: {action.protects} • {action.impact?.urgency || "Medium"} urgency
                     </div>
                   </div>
                   <div className="action-preview-badge">
@@ -233,14 +329,14 @@ export default function MissionControl() {
             </div>
           )}
           
-          {activeActions.length > 3 && (
+          {activeActions.length > 5 && (
             <Button 
               variant="ghost" 
               className="w-full mt-4"
               onClick={() => navigate("/actions")}
               data-testid="view-all-actions"
             >
-              View All Actions
+              View All {activeActions.length} Actions
               <ArrowRight size={16} />
             </Button>
           )}
