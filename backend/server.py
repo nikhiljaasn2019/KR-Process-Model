@@ -300,6 +300,10 @@ def check_deviations():
             action_id = f"AC-{sim_state.action_counter:03d}"
             sim_state.action_counter += 1
             
+            # Format current value
+            cv = dev['current_value']
+            current_val_str = f"{cv:.2f}" if isinstance(cv, float) else str(cv)
+            
             action = {
                 "id": action_id,
                 "title": dev["action_template"]["title"],
@@ -307,12 +311,12 @@ def check_deviations():
                 "trigger": {
                     "metric": dev["metric_name"],
                     "golden_band": f"{dev['band_str']} {dev['unit']}",
-                    "current_value": f"{dev['current_value']:.2f} {dev['unit']}" if isinstance(dev['current_value'], float) else f"{dev['current_value']} {dev['unit']}",
+                    "current_value": f"{current_val_str} {dev['unit']}",
                     "deviation": dev["deviation_str"],
                     "time_window": "Last 6 hours"
                 },
                 "evidence": [
-                    f"Current: {dev['current_value']:.2f} {dev['unit']}" if isinstance(dev['current_value'], float) else f"Current: {dev['current_value']} {dev['unit']}",
+                    f"Current: {current_val_str} {dev['unit']}",
                     f"Golden band ({get_phase(sim_state.current_day)} phase): {dev['band_str']} {dev['unit']}",
                     f"Run day: {sim_state.current_day}"
                 ],
