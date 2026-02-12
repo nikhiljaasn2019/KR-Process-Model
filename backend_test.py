@@ -289,6 +289,7 @@ def main():
     
     # Run all test suites
     tester.test_basic_endpoints()
+    tester.test_day_scenario_selector()  # NEW: Test day scenario selector feature
     tester.test_metrics_and_projections()
     tester.test_actions_workflow()
     tester.test_timeline_and_comparison()
