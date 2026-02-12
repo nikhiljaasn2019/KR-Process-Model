@@ -9,7 +9,11 @@ import {
   Shield,
   Target,
   Zap,
-  X
+  X,
+  TrendingDown,
+  TrendingUp,
+  Activity,
+  ArrowDown
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
@@ -188,6 +192,8 @@ export default function ActionCenter() {
 }
 
 function ActionCard({ action, onAcknowledge, onDone, onNotFeasible, isCompleted, getProtectsBadgeClass }) {
+  const impact = action.impact;
+  
   return (
     <div 
       className={`action-card ${isCompleted ? "done-action-card" : ""}`}
@@ -201,6 +207,11 @@ function ActionCard({ action, onAcknowledge, onDone, onNotFeasible, isCompleted,
           </div>
         </div>
         <div className="action-card-badges">
+          {impact?.urgency && (
+            <span className={`urgency-badge urgency-${impact.urgency.toLowerCase()}`}>
+              {impact.urgency} Urgency
+            </span>
+          )}
           <span className={`protects-badge ${getProtectsBadgeClass(action.protects)}`}>
             Protects: {action.protects}
           </span>
@@ -266,6 +277,66 @@ function ActionCard({ action, onAcknowledge, onDone, onNotFeasible, isCompleted,
           <CheckCircle size={16} />
           <span>Expected: {action.expected_effect}</span>
         </div>
+
+        {/* Impact Section - NEW */}
+        {impact && !isCompleted && (
+          <div className="impact-section" data-testid={`impact-${action.id}`}>
+            <div className="impact-header">
+              <TrendingDown size={16} />
+              <span>Taking This Action Will Help:</span>
+            </div>
+            
+            <div className="impact-grid">
+              {/* Risk Reduction */}
+              <div className="impact-card impact-risk">
+                <div className="impact-card-header">
+                  <Shield size={14} />
+                  <span>Risk Reduction</span>
+                </div>
+                <div className="impact-metrics">
+                  <div className="impact-metric">
+                    <span className="impact-metric-label">7-day</span>
+                    <span className="impact-metric-value negative">-{impact.risk_reduction?.["7_day"] || 0}%</span>
+                  </div>
+                  <div className="impact-metric">
+                    <span className="impact-metric-label">14-day</span>
+                    <span className="impact-metric-value negative">-{impact.risk_reduction?.["14_day"] || 0}%</span>
+                  </div>
+                  <div className="impact-metric">
+                    <span className="impact-metric-label">30-day</span>
+                    <span className="impact-metric-value negative">-{impact.risk_reduction?.["30_day"] || 0}%</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Productivity Impact */}
+              <div className="impact-card impact-productivity">
+                <div className="impact-card-header">
+                  <Activity size={14} />
+                  <span>Productivity Impact</span>
+                </div>
+                <p className="impact-description">{impact.productivity_impact}</p>
+              </div>
+
+              {/* Run Length Impact */}
+              <div className="impact-card impact-runlength">
+                <div className="impact-card-header">
+                  <Target size={14} />
+                  <span>Run Length Impact</span>
+                </div>
+                <p className="impact-description">{impact.run_length_impact}</p>
+              </div>
+            </div>
+
+            {impact.confidence && (
+              <div className="impact-confidence">
+                <span className={`confidence-badge confidence-${impact.confidence.toLowerCase()}`}>
+                  {impact.confidence} Confidence Estimate
+                </span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="action-card-footer">
