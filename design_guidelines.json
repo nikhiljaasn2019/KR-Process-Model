@@ -1,0 +1,132 @@
+{
+  "identity": {
+    "name": "KR AA Run Health OS",
+    "tone": "Executive Precision",
+    "aesthetic": "Light Professional, Clinical, High-Clarity",
+    "description": "A mission control dashboard for refinery executives. Clean, trustworthy, and actionable."
+  },
+  "typography": {
+    "font_family": {
+      "heading": "Manrope, sans-serif",
+      "body": "Inter, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "weights": {
+      "heading": "600 (SemiBold) or 500 (Medium)",
+      "body": "400 (Regular)",
+      "bold": "600 (SemiBold)"
+    },
+    "sizes": {
+      "h1": "text-3xl tracking-tight",
+      "h2": "text-2xl tracking-tight",
+      "h3": "text-xl tracking-tight",
+      "body": "text-sm leading-relaxed",
+      "small": "text-xs text-muted-foreground",
+      "kpi_value": "text-4xl font-bold tracking-tighter"
+    }
+  },
+  "colors": {
+    "palette": {
+      "background": "#FFFFFF",
+      "surface": "#F8FAFC",
+      "surface_highlight": "#F1F5F9",
+      "border": "#E2E8F0",
+      "text_primary": "#0F172A",
+      "text_secondary": "#64748B",
+      "primary": "#0F172A",
+      "primary_foreground": "#FFFFFF",
+      "accent_good": "#10B981",
+      "accent_warning": "#F59E0B",
+      "accent_critical": "#E11D48",
+      "accent_info": "#3B82F6"
+    },
+    "usage": {
+      "dashboard_bg": "bg-slate-50",
+      "card_bg": "bg-white",
+      "text_main": "text-slate-900",
+      "text_muted": "text-slate-500",
+      "border_default": "border-slate-200"
+    }
+  },
+  "layout": {
+    "grid_system": "Bento Grid",
+    "spacing": {
+      "page_padding": "p-6 md:p-8 lg:p-10",
+      "card_padding": "p-6",
+      "gap": "gap-6"
+    },
+    "structure": {
+      "mission_control": "grid grid-cols-12 gap-6",
+      "kpi_row": "col-span-12 grid grid-cols-1 md:grid-cols-4 gap-4",
+      "main_chart": "col-span-12 lg:col-span-8",
+      "side_panel": "col-span-12 lg:col-span-4"
+    }
+  },
+  "components": {
+    "Card": {
+      "style": "bg-white border border-slate-200 shadow-sm rounded-xl",
+      "header": "pb-2",
+      "content": "pt-0"
+    },
+    "Button": {
+      "primary": "bg-slate-900 text-white hover:bg-slate-800 shadow-none rounded-lg px-4 py-2",
+      "secondary": "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm rounded-lg px-4 py-2",
+      "ghost": "hover:bg-slate-100 text-slate-600"
+    },
+    "Badge": {
+      "style": "rounded-md px-2 py-0.5 text-xs font-medium border",
+      "variants": {
+        "success": "bg-emerald-50 text-emerald-700 border-emerald-200",
+        "warning": "bg-amber-50 text-amber-700 border-amber-200",
+        "critical": "bg-rose-50 text-rose-700 border-rose-200",
+        "neutral": "bg-slate-100 text-slate-600 border-slate-200"
+      }
+    },
+    "Charts": {
+      "library": "Recharts",
+      "style": "Minimalist. No grid lines (or very subtle). Custom tooltips with white bg and shadow.",
+      "colors": ["#0F172A", "#3B82F6", "#10B981", "#F59E0B", "#E11D48"]
+    }
+  },
+  "visual_enhancers": {
+    "shadows": "shadow-sm (subtle) or shadow-md (hover)",
+    "borders": "1px solid #E2E8F0",
+    "radius": "rounded-xl",
+    "glassmorphism": "Use sparingly for sticky headers: bg-white/80 backdrop-blur-md border-b border-slate-200/50"
+  },
+  "image_urls": {
+    "login_bg": "https://images.unsplash.com/photo-1588011930968-eadac80e6a5a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzR8MHwxfHNlYXJjaHw0fHxvaWwlMjByZWZpbmVyeSUyMGluZHVzdHJpYWwlMjBwbGFudCUyMGNsZWFuJTIwYWVzdGhldGljfGVufDB8fHx8MTc3MDg4NzEzMXww&ixlib=rb-4.1.0&q=85",
+    "industrial_texture": "https://images.unsplash.com/photo-1726731782158-fcf6822b6ca4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzR8MHwxfHNlYXJjaHwzfHxvaWwlMjByZWZpbmVyeSUyMGluZHVzdHJpYWwlMjBwbGFudCUyMGNsZWFuJTIwYWVzdGhldGljfGVufDB8fHx8MTc3MDg4NzEzMXww&ixlib=rb-4.1.0&q=85"
+  },
+  "instructions_to_main_agent": [
+    "Implement the 'Mission Control' as the landing page.",
+    "Use the 'Manrope' font for all headings. Import it from Google Fonts.",
+    "Ensure all numbers are specific (e.g., '98.4%' not 'High').",
+    "Do NOT use dark mode. Force light mode styles.",
+    "Use 'Lucide React' for icons (e.g., Activity, AlertTriangle, CheckCircle).",
+    "For the 'Golden Comparator', use a clean table with comparison columns.",
+    "The 'Demo Control Panel' should be a subtle drawer or a settings modal, not a main feature.",
+    "Data Freshness should be a small indicator in the top right (e.g., 'Live • Updated 2m ago').",
+    "Use 'sonner' for toast notifications when actions are taken."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy",
+    "Use glass-morphism effects with backdrop filters (12-24px blur)",
+    "You MUST NOT apply universal transition. Eg: transition: all. This results in breaking transforms. Always add transitions for specific interactive elements like button, input excluding transforms",
+    "You MUST NOT center align the app container, ie do not add .App { text-align: center; } in the css file. This disrupts the human natural reading flow of text",
+    "Always use modern button styles like pill-shaped, or sharp button with interaction animations & color relevant to the app style",
+    "NEVER: use AI assistant Emoji characters like 🤖🧠💭💡🔮🎯📚🎭🎬🎪🎉🎊🎁🎀🎂🍰🎈🎨🎰💰💵💳🏦💎🪙💸🤑📊📈📉💹🔢🏆🥇 etc for icons.",
+    "Every interaction needs micro-animations - hover states, transitions, parallax effects, and entrance animations. Static = dead.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "Subtle grain textures, noise overlays, custom cursors, selection states, and loading animations: separates good from extraordinary.",
+    "Main agent relies on these image URLs. Missing categories (especially sponsor logos) = main agent will use placeholder text which is FORBIDDEN",
+    "Prioritize using pre-existing components from src/components/ui when applicable",
+    "Create new components that match the style and conventions of existing components when needed",
+    "Examine existing components to understand the project's component patterns before creating new ones",
+    "Components MUST use named exports (export const ComponentName = ...)",
+    "Pages MUST use default exports (export default function PageName() {...})",
+    "Use sonner for toasts. Sonner component are located in /app/frontend/src/components/ui/sonner.jsx"
+  ]
+}
