@@ -636,15 +636,43 @@ async def simulate_what_if(request: SimulatorRequest):
 
 @api_router.post("/actions/{action_id}/status")
 async def update_action_status(action_id: str, update: ActionStatusUpdate):
-    """Update action status"""
-    # In a real app, this would persist to DB
+    """Update action status - persists to MongoDB"""
+    action_doc = {
+        "action_id": action_id,
+        "status": update.status,
+        "reason_code": update.reason_code,
+        "note": update.note,
+        "updated_at": datetime.now(timezone.utc)
+    }
+    
+    # Upsert - update if exists, insert if not
+    await db.action_statuses.update_one(
+        {"action_id": action_id},
+        {"$set": action_doc},
+        upsert=True
+    )
+    
     return {
         "action_id": action_id,
         "new_status": update.status,
         "reason_code": update.reason_code,
         "note": update.note,
-        "updated_at": datetime.now(timezone.utc).isoformat()
+        "updated_at": action_doc["updated_at"].isoformat()
     }
+
+@api_router.get("/actions/statuses")
+async def get_all_action_statuses():
+    """Get all persisted action statuses"""
+    statuses = await db.action_statuses.find({}, {"_id": 0}).to_list(1000)
+    return {"statuses": statuses}
+
+@api_router.get("/actions/{action_id}/status")
+async def get_action_status(action_id: str):
+    """Get status of a specific action"""
+    status = await db.action_statuses.find_one({"action_id": action_id}, {"_id": 0})
+    if not status:
+        return {"action_id": action_id, "status": "New"}
+    return status
 
 @api_router.get("/quick-days")
 async def get_quick_days():
