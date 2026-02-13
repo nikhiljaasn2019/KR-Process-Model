@@ -866,6 +866,12 @@ async def get_all_action_statuses():
     statuses = await db.action_statuses.find({}, {"_id": 0}).to_list(1000)
     return {"statuses": statuses}
 
+@api_router.delete("/actions/statuses/clear")
+async def clear_all_action_statuses():
+    """Clear all action statuses (for demo reset)"""
+    result = await db.action_statuses.delete_many({})
+    return {"deleted_count": result.deleted_count}
+
 @api_router.get("/actions/{action_id}/status")
 async def get_action_status(action_id: str):
     """Get status of a specific action"""
