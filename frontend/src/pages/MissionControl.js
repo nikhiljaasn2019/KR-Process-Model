@@ -455,7 +455,6 @@ function ProgressSection({ currentDay, dayData, comparison }) {
   const progressPercent = (currentDay / 111) * 100;
   const forecastEndDay = dayData.forecast_end_day_p50;
   const projectedEndPercent = (forecastEndDay / 111) * 100;
-  const ci = dayData.prediction_ci_90pct_days;
 
   // Execute moves projection
   const executeEndDay = comparison?.execute_moves?.forecast_end_day || forecastEndDay;
@@ -465,12 +464,12 @@ function ProgressSection({ currentDay, dayData, comparison }) {
     <div className="progress-section" data-testid="progress-section">
       <div className="progress-header">
         <span className="progress-title">Benchmark Run Progress</span>
-        <span className="golden-info">
-          Golden Candidate: 02-Dec-2024 → 23-Mar-2025 (111 days)
+        <span className="benchmark-info">
+          Benchmark Candidate: 02-Dec-2024 → 23-Mar-2025 (111 days)
         </span>
       </div>
       
-      <div className="golden-progress-bar">
+      <div className="benchmark-progress-bar">
         {/* Current progress fill */}
         <div className="progress-fill" style={{ width: `${progressPercent}%` }}>
           <div className="progress-marker">
@@ -478,30 +477,41 @@ function ProgressSection({ currentDay, dayData, comparison }) {
           </div>
         </div>
         
-        {/* Projection overlay */}
+        {/* Do Nothing projection */}
         {projectedEndPercent > progressPercent && (
           <div 
-            className={`projection-overlay ${scenarioMode === "execute_moves" ? "simulated" : ""}`}
+            className="projection-overlay do-nothing"
             style={{ 
               left: `${progressPercent}%`,
               width: `${Math.min(100, projectedEndPercent) - progressPercent}%`
             }}
           >
-            <span className="projection-label">
-              P50: {activeScenario?.predicted_end_date_p50 || dayData.predicted_end_date_p50}
-            </span>
+            <span className="projection-label">Do nothing: {dayData.predicted_end_date_p50}</span>
+          </div>
+        )}
+
+        {/* Execute moves projection (if different) */}
+        {executeEndPercent > projectedEndPercent && (
+          <div 
+            className="projection-overlay execute"
+            style={{ 
+              left: `${projectedEndPercent}%`,
+              width: `${Math.min(100, executeEndPercent) - projectedEndPercent}%`
+            }}
+          >
+            <span className="projection-label">+Actions: {comparison?.execute_moves?.predicted_end_date_p50}</span>
           </div>
         )}
         
-        {/* Golden target marker */}
-        <div className="golden-target-marker">
-          <span className="golden-target-label">Golden: 111d</span>
+        {/* Benchmark target marker */}
+        <div className="benchmark-target-marker">
+          <span className="benchmark-target-label">Benchmark: 111d</span>
         </div>
       </div>
       
       <div className="progress-labels">
         <span>Day 1</span>
-        <span>Day 111 (Golden)</span>
+        <span>Day 111 (Benchmark)</span>
       </div>
     </div>
   );
