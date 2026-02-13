@@ -2320,3 +2320,17 @@ body {
 .projection-overlay.simulated .projection-label {
   color: var(--accent-green);
 }
+
+/* Action status inline badge */
+.action-status-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: 0.5rem;
+  padding: 0.125rem 0.375rem;
+  background: rgba(16, 185, 129, 0.1);
+  border-radius: 4px;
+  font-size: 0.5625rem;
+  font-weight: 600;
+  color: var(--accent-green);
+}
