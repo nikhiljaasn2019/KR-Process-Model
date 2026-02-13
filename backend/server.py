@@ -6,11 +6,11 @@ import os
 import logging
 import json
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
-import uuid
 from datetime import datetime, timezone, timedelta
 import random
+import math
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -20,982 +20,674 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Load golden bands config
-CONFIG_PATH = Path(__file__).parent.parent / 'config' / 'golden_bands.json'
-with open(CONFIG_PATH, 'r') as f:
-    GOLDEN_CONFIG = json.load(f)
+# Load simulation data
+DATA_DIR = Path(__file__).parent.parent / 'data' / 'sim'
+with open(DATA_DIR / 'run_seed.json', 'r') as f:
+    RUN_SEED = json.load(f)
+with open(DATA_DIR / 'ops_events.json', 'r') as f:
+    OPS_EVENTS = json.load(f)
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Pydantic Models
-class ActionTrigger(BaseModel):
-    metric: str
-    golden_band: str
-    current_value: str
-    deviation: str
-    time_window: str
+# ========== SIMULATION ENGINE ==========
 
-class ActionCard(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str
-    title: str
-    protects: str
-    trigger: ActionTrigger
-    evidence: List[str]
-    action_checklist: List[str]
-    expected_effect: str
-    status: str = "New"
-    note: str = ""
-    created_at: str = ""
-    updated_at: str = ""
+class SimulationEngine:
+    """
+    Deterministic simulation engine for KR AA Run Health prototype.
+    Generates daily time-series using piecewise linear interpolation + jitter + events.
+    """
+    
+    def __init__(self, seed: int = 42):
+        self.seed = seed
+        self.rng = random.Random(seed)
+        self.anchors = RUN_SEED["anchors"]
+        self.events = OPS_EVENTS["events"]
+        self.golden_run = RUN_SEED["golden_run_candidate"]
+        self.target_days = RUN_SEED["kpi_targets"]["target_run_length_days"]
+        self.start_date = datetime.fromisoformat(self.golden_run["start_ts"].replace("+05:30", "+05:30"))
+        
+        # Pre-generate full time series
+        self.time_series = self._generate_full_series()
+        
+        # Simulator state (for what-if)
+        self.simulator_adjustments = {
+            "cleaning_cadence": 0,  # 0, +1, +2
+            "inhibitor_dose_index": 1.0,  # 0.9 to 1.3
+            "flush_frequency": 0,  # 0, +1
+            "intervention_discipline": "medium"  # low/medium/high
+        }
+    
+    def _get_jitter(self, base_value: float, max_pct: float = 2.5) -> float:
+        """Apply deterministic jitter to a value"""
+        jitter_pct = self.rng.uniform(-max_pct, max_pct) / 100
+        return base_value * (1 + jitter_pct)
+    
+    def _interpolate(self, day: int, metric: str) -> float:
+        """Piecewise linear interpolation between anchors"""
+        anchor_days = [a["day"] for a in self.anchors]
+        
+        # Find surrounding anchors
+        lower_anchor = None
+        upper_anchor = None
+        
+        for i, anchor in enumerate(self.anchors):
+            if anchor["day"] <= day:
+                lower_anchor = anchor
+            if anchor["day"] >= day and upper_anchor is None:
+                upper_anchor = anchor
+                break
+        
+        if lower_anchor is None:
+            lower_anchor = self.anchors[0]
+        if upper_anchor is None:
+            upper_anchor = self.anchors[-1]
+        
+        if lower_anchor["day"] == upper_anchor["day"]:
+            return lower_anchor.get(metric, 0)
+        
+        # Linear interpolation
+        t = (day - lower_anchor["day"]) / (upper_anchor["day"] - lower_anchor["day"])
+        lower_val = lower_anchor.get(metric, 0)
+        upper_val = upper_anchor.get(metric, 0)
+        
+        return lower_val + t * (upper_val - lower_val)
+    
+    def _apply_event_effects(self, day: int, metrics: dict) -> dict:
+        """Apply event overrides/spikes to metrics"""
+        for event in self.events:
+            event_day = event["day"]
+            
+            # Event affects current day and a few days after
+            if event_day <= day <= event_day + 3:
+                severity_mult = {"low": 1.0, "medium": 1.3, "high": 1.6}.get(event["severity"], 1.0)
+                decay = 1.0 - (day - event_day) * 0.2  # Decay effect over days
+                decay = max(0.3, decay)
+                
+                if event["type"] == "FILTER_CLEANING_SPIKE":
+                    metrics["filter_change_count_per_day"] += 1.5 * severity_mult * decay
+                    metrics["polymer_burden_kg_per_day"] += 200 * severity_mult * decay
+                
+                elif event["type"] == "TEMP_EXCURSION":
+                    metrics["fouling_risk_index"] += 0.8 * severity_mult * decay
+                    metrics["run_health_score"] -= 2 * severity_mult * decay
+                
+                elif event["type"] == "FOULING_RISK_CLUSTER":
+                    metrics["fouling_risk_index"] += 1.5 * severity_mult * decay
+                    metrics["polymer_burden_kg_per_day"] += 400 * severity_mult * decay
+                    metrics["filter_change_count_per_day"] += 2 * decay
+                    metrics["run_health_score"] -= 5 * decay
+                
+                elif event["type"] == "RUN_RESCUE_MODE":
+                    # Rescue mode SLOWS worsening
+                    metrics["fouling_risk_index"] *= 0.9
+                    metrics["run_health_score"] += 3 * decay
+                
+                elif event["type"] == "PREDICTED_END_SHIFT":
+                    if day == event_day:
+                        metrics["predicted_remaining_days"] = event["observed"]["predicted_remaining_days_after"]
+        
+        return metrics
+    
+    def _calculate_derived_metrics(self, day: int, metrics: dict) -> dict:
+        """Calculate derived/computed metrics"""
+        
+        # Polymer Build Index (0-100) from polymer burden + filter changes
+        polymer_normalized = min(100, (metrics["polymer_burden_kg_per_day"] / 1500) * 100)
+        filter_normalized = min(100, (metrics["filter_change_count_per_day"] / 3) * 100)
+        metrics["polymer_build_index"] = int((polymer_normalized * 0.6 + filter_normalized * 0.4))
+        
+        # Cumulative output (tons)
+        metrics["cumulative_output_tons"] = int(metrics["eaa_output_tpd"] * day * 0.95)
+        
+        # Expected total output till end
+        remaining = metrics["predicted_remaining_days"]
+        avg_future_output = metrics["eaa_output_tpd"] * 0.95  # Slight decline assumed
+        metrics["expected_total_output_tons"] = int(metrics["cumulative_output_tons"] + avg_future_output * remaining)
+        
+        # Output forecast band
+        metrics["eaa_output_band_min"] = int(metrics["eaa_output_tpd"] * 0.92)
+        metrics["eaa_output_band_max"] = int(metrics["eaa_output_tpd"] * 1.05)
+        
+        # Predictability score
+        ci = metrics["prediction_ci_90pct_days"]
+        if ci <= 5:
+            metrics["predictability_score"] = "High"
+        elif ci <= 9:
+            metrics["predictability_score"] = "Medium"
+        else:
+            metrics["predictability_score"] = "Low"
+        
+        # Data freshness status
+        if metrics["data_freshness_score"] >= 90:
+            metrics["feed_status"] = "Healthy"
+        elif metrics["data_freshness_score"] >= 75:
+            metrics["feed_status"] = "Delayed"
+        else:
+            metrics["feed_status"] = "Interrupted"
+        
+        # Predicted end date
+        base_date = self.start_date + timedelta(days=day - 1)
+        predicted_end = base_date + timedelta(days=remaining)
+        metrics["predicted_end_date"] = predicted_end.strftime("%Y-%m-%d")
+        metrics["predicted_end_date_early"] = (predicted_end - timedelta(days=ci)).strftime("%Y-%m-%d")
+        metrics["predicted_end_date_late"] = (predicted_end + timedelta(days=ci)).strftime("%Y-%m-%d")
+        
+        # Current date
+        current_date = self.start_date + timedelta(days=day - 1)
+        metrics["current_date"] = current_date.strftime("%Y-%m-%d")
+        metrics["current_date_display"] = current_date.strftime("%d %b %Y")
+        
+        return metrics
+    
+    def _get_drivers_for_day(self, day: int, metrics: dict) -> List[dict]:
+        """Generate top 5 drivers with specific details"""
+        drivers = []
+        
+        # Find closest anchor for baseline comparison
+        closest_anchor = self.anchors[0]
+        for anchor in self.anchors:
+            if anchor["day"] <= day:
+                closest_anchor = anchor
+        
+        # Polymer burden driver
+        polymer_baseline = 180  # Day 1 baseline
+        polymer_current = metrics["polymer_burden_kg_per_day"]
+        if polymer_current > polymer_baseline * 1.5:
+            severity = "high" if polymer_current > 800 else "medium"
+            drift_start = max(1, day - int((polymer_current - polymer_baseline) / 50))
+            drivers.append({
+                "metric": "Polymer Burden",
+                "current_value": f"{int(polymer_current)} kg/day",
+                "baseline": f"{polymer_baseline} kg/day",
+                "direction": "↑",
+                "severity": severity,
+                "since_day": drift_start,
+                "trend_data": [polymer_baseline + (polymer_current - polymer_baseline) * i / 7 for i in range(8)]
+            })
+        
+        # Filter change driver
+        filter_baseline = 0.4
+        filter_current = metrics["filter_change_count_per_day"]
+        if filter_current > filter_baseline * 2:
+            severity = "high" if filter_current > 2 else "medium"
+            drivers.append({
+                "metric": "Filter Change Frequency",
+                "current_value": f"{filter_current:.1f}/day",
+                "baseline": f"{filter_baseline}/day",
+                "direction": "↑",
+                "severity": severity,
+                "since_day": max(1, day - 10),
+                "trend_data": [filter_baseline + (filter_current - filter_baseline) * i / 7 for i in range(8)]
+            })
+        
+        # Fouling risk driver
+        fouling_baseline = 2.2
+        fouling_current = metrics["fouling_risk_index"]
+        if fouling_current > 4:
+            severity = "high" if fouling_current > 6 else "medium"
+            drivers.append({
+                "metric": "Fouling Risk Index",
+                "current_value": f"{fouling_current:.1f}/10",
+                "baseline": f"{fouling_baseline}/10",
+                "direction": "↑",
+                "severity": severity,
+                "since_day": max(1, day - 15),
+                "trend_data": [fouling_baseline + (fouling_current - fouling_baseline) * i / 7 for i in range(8)]
+            })
+        
+        # Inhibitor dose driver
+        inhibitor_baseline = 1.0
+        inhibitor_current = metrics["inhibitor_dose_index"]
+        if inhibitor_current > 1.08:
+            severity = "medium" if inhibitor_current < 1.2 else "high"
+            drivers.append({
+                "metric": "Inhibitor Dose Index",
+                "current_value": f"{inhibitor_current:.2f}",
+                "baseline": f"{inhibitor_baseline:.2f}",
+                "direction": "↑",
+                "severity": severity,
+                "since_day": max(1, day - 20),
+                "trend_data": [inhibitor_baseline + (inhibitor_current - inhibitor_baseline) * i / 7 for i in range(8)]
+            })
+        
+        # Output decline driver
+        output_baseline = 345
+        output_current = metrics["eaa_output_tpd"]
+        if output_current < output_baseline * 0.95:
+            severity = "high" if output_current < 320 else "medium"
+            drivers.append({
+                "metric": "EAA Output Rate",
+                "current_value": f"{int(output_current)} TPD",
+                "baseline": f"{output_baseline} TPD",
+                "direction": "↓",
+                "severity": severity,
+                "since_day": max(1, day - 25),
+                "trend_data": [output_baseline - (output_baseline - output_current) * i / 7 for i in range(8)]
+            })
+        
+        # Health score driver
+        health_baseline = 92
+        health_current = metrics["run_health_score"]
+        if health_current < health_baseline - 10:
+            severity = "high" if health_current < 70 else "medium"
+            drivers.append({
+                "metric": "Run Health Score",
+                "current_value": f"{int(health_current)}",
+                "baseline": f"{health_baseline}",
+                "direction": "↓",
+                "severity": severity,
+                "since_day": max(1, day - 30),
+                "trend_data": [health_baseline - (health_baseline - health_current) * i / 7 for i in range(8)]
+            })
+        
+        # Sort by severity and return top 5
+        severity_order = {"high": 0, "medium": 1, "low": 2}
+        drivers.sort(key=lambda x: severity_order.get(x["severity"], 2))
+        
+        return drivers[:5]
+    
+    def _get_actions_for_day(self, day: int, metrics: dict) -> List[dict]:
+        """Generate top 3 specific actions with full details"""
+        actions = []
+        
+        # Find closest anchor
+        closest_anchor = self.anchors[0]
+        for anchor in self.anchors:
+            if anchor["day"] <= day:
+                closest_anchor = anchor
+        
+        # Action 1: Based on polymer burden
+        if metrics["polymer_burden_kg_per_day"] > 400:
+            actions.append({
+                "id": f"ACT-{day:03d}-01",
+                "priority": 1,
+                "title": "Increase Flush Frequency",
+                "metric": "Polymer Burden",
+                "current_value": f"{int(metrics['polymer_burden_kg_per_day'])} kg/day",
+                "baseline": "180 kg/day",
+                "time_window": "Last 24h",
+                "what": "Add +1 flush cycle per shift to G8, G9 filters",
+                "where": ["G8", "G9", "V-014"],
+                "why": "Polymer accumulation rate 2.3x baseline; preemptive flushing reduces filter change frequency",
+                "checklist": [
+                    "Verify flush line pressure at G8 (target: 4.5-5.0 bar)",
+                    "Open flush valve for G9 and run 15-min cycle",
+                    "Log polymer collection volume post-flush",
+                    "Check DP across filters before/after (target drop: 0.2-0.4 bar)",
+                    "Update shift log with flush completion time"
+                ],
+                "expected_effect": "Reduce polymer accumulation by 15-25% over next 48h (simulated)",
+                "status": "New"
+            })
+        
+        # Action 2: Based on filter changes
+        if metrics["filter_change_count_per_day"] > 1.0:
+            actions.append({
+                "id": f"ACT-{day:03d}-02",
+                "priority": 2,
+                "title": "Schedule Preventive Filter Inspection",
+                "metric": "Filter Change Frequency",
+                "current_value": f"{metrics['filter_change_count_per_day']:.1f}/day",
+                "baseline": "0.4/day",
+                "time_window": "Last 48h",
+                "what": "Conduct visual + DP inspection of high-frequency filters",
+                "where": ["G8", "G9"],
+                "why": "Filter changes at 3x baseline; early inspection prevents unplanned downtime",
+                "checklist": [
+                    "Take G8 offline during shift change window (06:00 or 18:00)",
+                    "Measure DP across filter element (record value)",
+                    "Visual inspection for polymer deposits (photograph if abnormal)",
+                    "If DP > 1.2 bar or visible fouling, initiate replacement",
+                    "Document inspection findings in maintenance log"
+                ],
+                "expected_effect": "Identify 1-2 filters nearing replacement; avoid unplanned change (simulated)",
+                "status": "New"
+            })
+        
+        # Action 3: Based on fouling risk
+        if metrics["fouling_risk_index"] > 4.5:
+            actions.append({
+                "id": f"ACT-{day:03d}-03",
+                "priority": 3,
+                "title": "Tighten Temperature Operating Band",
+                "metric": "Fouling Risk Index",
+                "current_value": f"{metrics['fouling_risk_index']:.1f}/10",
+                "baseline": "2.2/10",
+                "time_window": "Last 72h",
+                "what": "Reduce temperature setpoint tolerance on V-014, V-022",
+                "where": ["V-014", "V-022", "E-015"],
+                "why": "Elevated fouling risk correlates with temperature excursions; tighter control reduces polymer formation rate",
+                "checklist": [
+                    "Access DCS and navigate to V-014 temperature loop",
+                    "Reduce high alarm from +3°C to +2°C above setpoint",
+                    "Set V-022 outlet temp warning at current value +1°C",
+                    "Brief incoming shift on tighter bands (verbal + logbook)",
+                    "Monitor for 12h; if no alarms, bands are sustainable"
+                ],
+                "expected_effect": "Reduce temperature-driven polymer formation by 10-20% (simulated)",
+                "status": "New"
+            })
+        
+        # Action 4: Inhibitor check
+        if metrics["inhibitor_dose_index"] > 1.1:
+            actions.append({
+                "id": f"ACT-{day:03d}-04",
+                "priority": 4,
+                "title": "Validate Inhibitor Injection Point",
+                "metric": "Inhibitor Dose Index",
+                "current_value": f"{metrics['inhibitor_dose_index']:.2f}",
+                "baseline": "1.00",
+                "time_window": "Last 7d trend",
+                "what": "Inspect inhibitor injection line for partial blockage",
+                "where": ["V-014", "V-012", "LV3601"],
+                "why": "Dose creep suggests reduced injection efficiency; early detection prevents polymerization events",
+                "checklist": [
+                    "Isolate injection line LV3601 (coordinate with panel)",
+                    "Flush line with cleaning solvent for 10 min",
+                    "Check nozzle spray pattern (should be fine mist)",
+                    "Measure flow rate and compare to baseline (±5% acceptable)",
+                    "If blocked, replace nozzle and re-validate"
+                ],
+                "expected_effect": "Restore injection efficiency; dose index should stabilize at 1.05-1.08 (simulated)",
+                "status": "New"
+            })
+        
+        # Default actions if nothing triggered
+        if len(actions) == 0:
+            actions = [
+                {
+                    "id": f"ACT-{day:03d}-01",
+                    "priority": 1,
+                    "title": "Routine DP Trend Review",
+                    "metric": "System DP",
+                    "current_value": "Within band",
+                    "baseline": "Within band",
+                    "time_window": "Last 24h",
+                    "what": "Verify DP trends on critical filters are stable",
+                    "where": ["G8", "G9"],
+                    "why": "Proactive monitoring catches drift before it becomes actionable",
+                    "checklist": [
+                        "Pull 24h DP trend from DCS historian",
+                        "Confirm no upward drift > 0.1 bar/day",
+                        "Note any step changes (investigate if found)",
+                        "Document 'stable' in shift log"
+                    ],
+                    "expected_effect": "Maintain baseline performance; early warning if drift begins (simulated)",
+                    "status": "New"
+                }
+            ]
+        
+        return actions[:3]
+    
+    def _generate_full_series(self) -> Dict[int, dict]:
+        """Generate complete time series from Day 1 to Day 111"""
+        series = {}
+        
+        for day in range(1, 112):
+            # Reset RNG for this day (deterministic)
+            self.rng.seed(self.seed + day)
+            
+            # Interpolate base metrics
+            metrics = {
+                "day": day,
+                "run_health_score": self._get_jitter(self._interpolate(day, "run_health_score")),
+                "predicted_remaining_days": int(self._interpolate(day, "predicted_remaining_days")),
+                "prediction_ci_90pct_days": int(self._interpolate(day, "prediction_ci_90pct_days")),
+                "eaa_output_tpd": self._get_jitter(self._interpolate(day, "eaa_output_tpd")),
+                "polymer_burden_kg_per_day": self._get_jitter(self._interpolate(day, "polymer_burden_kg_per_day")),
+                "filter_change_count_per_day": max(0, self._get_jitter(self._interpolate(day, "filter_change_count_per_day"))),
+                "inhibitor_dose_index": self._get_jitter(self._interpolate(day, "inhibitor_dose_index")),
+                "fouling_risk_index": self._get_jitter(self._interpolate(day, "fouling_risk_index")),
+                "data_freshness_score": self._get_jitter(self._interpolate(day, "data_freshness_score")),
+            }
+            
+            # Apply event effects
+            metrics = self._apply_event_effects(day, metrics)
+            
+            # Clamp values
+            metrics["run_health_score"] = max(0, min(100, metrics["run_health_score"]))
+            metrics["fouling_risk_index"] = max(0, min(10, metrics["fouling_risk_index"]))
+            metrics["filter_change_count_per_day"] = max(0, min(6, metrics["filter_change_count_per_day"]))
+            
+            # Calculate derived metrics
+            metrics = self._calculate_derived_metrics(day, metrics)
+            
+            # Add drivers and actions
+            metrics["drivers"] = self._get_drivers_for_day(day, metrics)
+            metrics["actions"] = self._get_actions_for_day(day, metrics)
+            
+            series[day] = metrics
+        
+        return series
+    
+    def get_day_data(self, day: int) -> dict:
+        """Get all metrics for a specific day"""
+        day = max(1, min(111, day))
+        return self.time_series.get(day, self.time_series[1])
+    
+    def get_time_series_range(self, start_day: int, end_day: int) -> List[dict]:
+        """Get time series for a range of days"""
+        return [self.time_series[d] for d in range(start_day, end_day + 1) if d in self.time_series]
+    
+    def get_what_changed(self, current_day: int) -> List[dict]:
+        """Get what changed in last 7 days"""
+        changes = []
+        
+        for day in range(max(1, current_day - 6), current_day + 1):
+            day_data = self.time_series.get(day, {})
+            prev_data = self.time_series.get(day - 1, {})
+            
+            # Check for events on this day
+            events_today = [e for e in self.events if e["day"] == day]
+            
+            # Calculate deltas
+            health_delta = day_data.get("run_health_score", 0) - prev_data.get("run_health_score", day_data.get("run_health_score", 0))
+            remaining_delta = day_data.get("predicted_remaining_days", 0) - prev_data.get("predicted_remaining_days", day_data.get("predicted_remaining_days", 0))
+            output_delta = day_data.get("eaa_output_tpd", 0) - prev_data.get("eaa_output_tpd", day_data.get("eaa_output_tpd", 0))
+            
+            change = {
+                "day": day,
+                "date": day_data.get("current_date_display", ""),
+                "health_score": int(day_data.get("run_health_score", 0)),
+                "health_delta": round(health_delta, 1),
+                "remaining_days": day_data.get("predicted_remaining_days", 0),
+                "remaining_delta": remaining_delta,
+                "output_tpd": int(day_data.get("eaa_output_tpd", 0)),
+                "output_delta": round(output_delta, 1),
+                "events": events_today,
+                "has_event": len(events_today) > 0
+            }
+            changes.append(change)
+        
+        return changes
+    
+    def simulate_what_if(self, day: int, adjustments: dict) -> dict:
+        """Simulate what-if scenarios"""
+        base_data = self.get_day_data(day).copy()
+        
+        cleaning_effect = adjustments.get("cleaning_cadence", 0)
+        inhibitor_effect = adjustments.get("inhibitor_dose_index", 1.0)
+        flush_effect = adjustments.get("flush_frequency", 0)
+        discipline = adjustments.get("intervention_discipline", "medium")
+        
+        # Calculate effects
+        risk_reduction = cleaning_effect * 0.08 + flush_effect * 0.05
+        if discipline == "high":
+            risk_reduction += 0.15
+        elif discipline == "low":
+            risk_reduction -= 0.10
+        
+        output_boost = cleaning_effect * 3 + flush_effect * 2
+        if inhibitor_effect > 1.0:
+            output_boost += (inhibitor_effect - 1.0) * 20
+        
+        # Calculate simulated metrics
+        simulated = {
+            "run_health_score": min(100, base_data["run_health_score"] + risk_reduction * 10),
+            "predicted_remaining_days": int(base_data["predicted_remaining_days"] * (1 + risk_reduction * 0.3)),
+            "eaa_output_tpd": base_data["eaa_output_tpd"] + output_boost,
+            "fouling_risk_index": max(1, base_data["fouling_risk_index"] * (1 - risk_reduction)),
+            "polymer_burden_kg_per_day": base_data["polymer_burden_kg_per_day"] * (1 - cleaning_effect * 0.1 - flush_effect * 0.05),
+        }
+        
+        # Calculate end date
+        base_date = self.start_date + timedelta(days=day - 1)
+        predicted_end = base_date + timedelta(days=simulated["predicted_remaining_days"])
+        simulated["predicted_end_date"] = predicted_end.strftime("%Y-%m-%d")
+        
+        # Cumulative output
+        remaining = simulated["predicted_remaining_days"]
+        simulated["expected_total_output_tons"] = int(base_data["cumulative_output_tons"] + simulated["eaa_output_tpd"] * remaining * 0.95)
+        
+        return {
+            "baseline": base_data,
+            "simulated": simulated,
+            "adjustments": adjustments,
+            "deltas": {
+                "health_score": round(simulated["run_health_score"] - base_data["run_health_score"], 1),
+                "remaining_days": simulated["predicted_remaining_days"] - base_data["predicted_remaining_days"],
+                "output_tpd": round(simulated["eaa_output_tpd"] - base_data["eaa_output_tpd"], 1),
+                "total_output": simulated["expected_total_output_tons"] - base_data["expected_total_output_tons"]
+            }
+        }
+
+# Initialize simulation engine
+sim_engine = SimulationEngine(seed=42)
+
+# ========== PYDANTIC MODELS ==========
 
 class ActionStatusUpdate(BaseModel):
     status: str
+    reason_code: Optional[str] = None
     note: Optional[str] = ""
 
-class DemoEventRequest(BaseModel):
-    event_type: str
-    duration_steps: Optional[int] = 4
-
-class DayScenarioRequest(BaseModel):
+class SimulatorRequest(BaseModel):
     day: int
+    cleaning_cadence: int = 0
+    inhibitor_dose_index: float = 1.0
+    flush_frequency: int = 0
+    intervention_discipline: str = "medium"
 
-class RunRecord(BaseModel):
-    run_id: str
-    start_ts: str
-    end_ts: Optional[str]
-    duration_days: int
-    end_reason: str
-    notes: str
-    is_golden: bool = False
-    is_current: bool = False
+# ========== API ROUTES ==========
 
-class MetricSnapshot(BaseModel):
-    timestamp: str
-    cw_inlet_temp: float
-    inhibitor_continuity: float
-    column_dp_index: float
-    reactor_temp_oscillation: float
-    aa_dimer: float
-    mehq: float
-    excursion_count: int
-
-class DataFreshness(BaseModel):
-    last_data_ts: str
-    last_scoring_ts: str
-    stale_metrics: List[str]
-    flatline_flags: List[str]
-    is_paused: bool
-    confidence: str
-
-# In-memory simulation state
-class SimulationState:
-    def __init__(self):
-        self.reset()
-    
-    def reset(self):
-        self.current_run_start = datetime(2025, 1, 15, 8, 0, tzinfo=timezone.utc)
-        self.simulated_time = datetime(2025, 1, 15, 8, 0, tzinfo=timezone.utc)
-        self.current_day = 1
-        self.is_paused = False
-        self.last_update = datetime.now(timezone.utc)
-        self.injected_events = []
-        self.action_counter = 1
-        self.actions = {}
-        self.timeline_events = []
-        self.metrics_history = []
-        self.scenario_mode = False  # Track if we're in a preset scenario
-        self.generate_initial_metrics()
-    
-    def set_day_scenario(self, day: int):
-        """Set metrics and state based on predefined day scenarios"""
-        self.current_day = day
-        self.simulated_time = self.current_run_start + timedelta(days=day - 1)
-        self.last_update = datetime.now(timezone.utc)
-        self.scenario_mode = True
-        self.actions = {}
-        self.action_counter = 1
-        self.timeline_events = []
-        
-        # Define scenarios for different days with progressively worsening conditions
-        scenarios = {
-            1: {
-                "metrics": {
-                    "cw_inlet_temp": 27.2,
-                    "inhibitor_continuity": 99.9,
-                    "column_dp_index": 25,
-                    "reactor_temp_oscillation": 0.4,
-                    "aa_dimer": 0.18,
-                    "mehq": 205,
-                    "excursion_count": 0
-                },
-                "events": [],
-                "description": "Fresh start - all systems optimal"
-            },
-            18: {
-                "metrics": {
-                    "cw_inlet_temp": 28.1,
-                    "inhibitor_continuity": 99.6,
-                    "column_dp_index": 30,
-                    "reactor_temp_oscillation": 0.55,
-                    "aa_dimer": 0.24,
-                    "mehq": 195,
-                    "excursion_count": 1
-                },
-                "events": [
-                    {"type": "Minor CW fluctuation", "day": 12, "resolved": True}
-                ],
-                "description": "Early-run stability maintained"
-            },
-            35: {
-                "metrics": {
-                    "cw_inlet_temp": 29.2,
-                    "inhibitor_continuity": 99.3,
-                    "column_dp_index": 38,
-                    "reactor_temp_oscillation": 0.75,
-                    "aa_dimer": 0.29,
-                    "mehq": 188,
-                    "excursion_count": 2
-                },
-                "events": [
-                    {"type": "CW Temperature Spike", "day": 28, "resolved": True},
-                    {"type": "ΔP uptick detected", "day": 32, "resolved": False}
-                ],
-                "description": "Mid-run transition - attention needed"
-            },
-            55: {
-                "metrics": {
-                    "cw_inlet_temp": 29.8,
-                    "inhibitor_continuity": 98.8,
-                    "column_dp_index": 44,
-                    "reactor_temp_oscillation": 0.92,
-                    "aa_dimer": 0.33,
-                    "mehq": 182,
-                    "excursion_count": 3
-                },
-                "events": [
-                    {"type": "CW Temperature Spike", "day": 28, "resolved": True},
-                    {"type": "ΔP uptick detected", "day": 32, "resolved": True},
-                    {"type": "Inhibitor brief interruption", "day": 45, "resolved": True},
-                    {"type": "Dimer rise in lab sample", "day": 52, "resolved": False}
-                ],
-                "description": "Late-mid run - multiple parameters trending"
-            },
-            70: {
-                "metrics": {
-                    "cw_inlet_temp": 30.1,
-                    "inhibitor_continuity": 98.2,
-                    "column_dp_index": 48,
-                    "reactor_temp_oscillation": 1.05,
-                    "aa_dimer": 0.37,
-                    "mehq": 176,
-                    "excursion_count": 4
-                },
-                "events": [
-                    {"type": "CW Temperature Spike", "day": 28, "resolved": True},
-                    {"type": "ΔP uptick detected", "day": 32, "resolved": True},
-                    {"type": "Inhibitor brief interruption", "day": 45, "resolved": True},
-                    {"type": "Dimer rise in lab sample", "day": 52, "resolved": True},
-                    {"type": "CW system strain", "day": 62, "resolved": False},
-                    {"type": "Column ΔP elevated", "day": 67, "resolved": False}
-                ],
-                "description": "Late run - active intervention required"
-            },
-            90: {
-                "metrics": {
-                    "cw_inlet_temp": 30.5,
-                    "inhibitor_continuity": 97.5,
-                    "column_dp_index": 52,
-                    "reactor_temp_oscillation": 1.15,
-                    "aa_dimer": 0.42,
-                    "mehq": 170,
-                    "excursion_count": 5
-                },
-                "events": [
-                    {"type": "CW Temperature Spike", "day": 28, "resolved": True},
-                    {"type": "ΔP uptick detected", "day": 32, "resolved": True},
-                    {"type": "Inhibitor brief interruption", "day": 45, "resolved": True},
-                    {"type": "Dimer rise in lab sample", "day": 52, "resolved": True},
-                    {"type": "CW system strain", "day": 62, "resolved": True},
-                    {"type": "Column ΔP elevated", "day": 67, "resolved": True},
-                    {"type": "Reactor oscillation high", "day": 78, "resolved": False},
-                    {"type": "MeHQ level dropping", "day": 85, "resolved": False},
-                    {"type": "Multiple excursions", "day": 88, "resolved": False}
-                ],
-                "description": "Critical phase - golden target in sight but risks elevated"
-            },
-            105: {
-                "metrics": {
-                    "cw_inlet_temp": 30.8,
-                    "inhibitor_continuity": 96.8,
-                    "column_dp_index": 55,
-                    "reactor_temp_oscillation": 1.25,
-                    "aa_dimer": 0.45,
-                    "mehq": 165,
-                    "excursion_count": 6
-                },
-                "events": [
-                    {"type": "CW Temperature Spike", "day": 28, "resolved": True},
-                    {"type": "ΔP uptick detected", "day": 32, "resolved": True},
-                    {"type": "Inhibitor brief interruption", "day": 45, "resolved": True},
-                    {"type": "Dimer rise in lab sample", "day": 52, "resolved": True},
-                    {"type": "CW system strain", "day": 62, "resolved": True},
-                    {"type": "Column ΔP elevated", "day": 67, "resolved": True},
-                    {"type": "Reactor oscillation high", "day": 78, "resolved": True},
-                    {"type": "MeHQ level dropping", "day": 85, "resolved": True},
-                    {"type": "Multiple excursions", "day": 88, "resolved": True},
-                    {"type": "Critical fouling risk", "day": 98, "resolved": False},
-                    {"type": "Productivity decline detected", "day": 102, "resolved": False}
-                ],
-                "description": "Final stretch - maximum vigilance to reach golden target"
-            }
-        }
-        
-        # Find closest scenario
-        available_days = sorted(scenarios.keys())
-        closest_day = min(available_days, key=lambda x: abs(x - day))
-        scenario = scenarios[closest_day]
-        
-        # Apply scenario metrics
-        self.current_metrics = scenario["metrics"].copy()
-        
-        # Generate timeline events
-        for event in scenario["events"]:
-            self.timeline_events.append({
-                "id": str(uuid.uuid4())[:8],
-                "timestamp": (self.current_run_start + timedelta(days=event["day"] - 1)).isoformat(),
-                "day": event["day"],
-                "event_type": event["type"].lower().replace(" ", "_"),
-                "title": event["type"],
-                "description": f"Event detected at Day {event['day']}",
-                "resolved": event["resolved"],
-                "triggered_actions": []
-            })
-        
-        # Generate metrics history for the scenario
-        self.metrics_history = self._generate_scenario_history(day, scenario)
-        
-        return scenario.get("description", "")
-    
-    def _generate_scenario_history(self, target_day: int, scenario: dict):
-        """Generate plausible metrics history leading up to the current day"""
-        history = []
-        base_metrics = {
-            "cw_inlet_temp": 27.0,
-            "inhibitor_continuity": 99.9,
-            "column_dp_index": 24,
-            "reactor_temp_oscillation": 0.35,
-            "aa_dimer": 0.18,
-            "mehq": 208,
-            "excursion_count": 0
-        }
-        current = scenario["metrics"]
-        
-        # Create interpolated history
-        num_points = min(target_day, 30)  # Max 30 history points
-        for i in range(num_points):
-            day = max(1, target_day - num_points + i + 1)
-            progress = i / max(1, num_points - 1)
-            
-            snapshot = {
-                "timestamp": (self.current_run_start + timedelta(days=day - 1)).isoformat(),
-                "day": day,
-                "cw_inlet_temp": base_metrics["cw_inlet_temp"] + progress * (current["cw_inlet_temp"] - base_metrics["cw_inlet_temp"]) + random.uniform(-0.2, 0.2),
-                "inhibitor_continuity": base_metrics["inhibitor_continuity"] - progress * (base_metrics["inhibitor_continuity"] - current["inhibitor_continuity"]) + random.uniform(-0.1, 0.1),
-                "column_dp_index": base_metrics["column_dp_index"] + progress * (current["column_dp_index"] - base_metrics["column_dp_index"]) + random.uniform(-1, 1),
-                "reactor_temp_oscillation": base_metrics["reactor_temp_oscillation"] + progress * (current["reactor_temp_oscillation"] - base_metrics["reactor_temp_oscillation"]) + random.uniform(-0.05, 0.05),
-                "aa_dimer": base_metrics["aa_dimer"] + progress * (current["aa_dimer"] - base_metrics["aa_dimer"]) + random.uniform(-0.01, 0.01),
-                "mehq": base_metrics["mehq"] - progress * (base_metrics["mehq"] - current["mehq"]) + random.uniform(-2, 2),
-                "excursion_count": int(progress * current["excursion_count"])
-            }
-            history.append(snapshot)
-        
-        return history
-        
-    def generate_initial_metrics(self):
-        # Generate initial stable metrics
-        self.current_metrics = {
-            "cw_inlet_temp": 27.8,
-            "inhibitor_continuity": 99.8,
-            "column_dp_index": 28,
-            "reactor_temp_oscillation": 0.5,
-            "aa_dimer": 0.22,
-            "mehq": 195,
-            "excursion_count": 1
-        }
-        self.metrics_history = [self._create_metric_snapshot()]
-    
-    def _create_metric_snapshot(self):
-        return {
-            "timestamp": self.simulated_time.isoformat(),
-            "day": self.current_day,
-            **self.current_metrics
-        }
-    
-    def advance_time(self, hours: int = 6):
-        if self.is_paused:
-            return
-        
-        self.simulated_time += timedelta(hours=hours)
-        self.current_day = (self.simulated_time - self.current_run_start).days + 1
-        self.last_update = datetime.now(timezone.utc)
-        
-        # Natural metric drift
-        self._apply_natural_drift()
-        
-        # Process injected events
-        self._process_injected_events()
-        
-        # Record metrics
-        self.metrics_history.append(self._create_metric_snapshot())
-        if len(self.metrics_history) > 100:
-            self.metrics_history = self.metrics_history[-100:]
-    
-    def _apply_natural_drift(self):
-        # Small random variations (natural process noise)
-        self.current_metrics["cw_inlet_temp"] += random.uniform(-0.1, 0.15)
-        self.current_metrics["cw_inlet_temp"] = max(26.0, min(32.0, self.current_metrics["cw_inlet_temp"]))
-        
-        self.current_metrics["inhibitor_continuity"] += random.uniform(-0.1, 0.05)
-        self.current_metrics["inhibitor_continuity"] = max(95.0, min(100.0, self.current_metrics["inhibitor_continuity"]))
-        
-        self.current_metrics["column_dp_index"] += random.uniform(-1, 2)
-        self.current_metrics["column_dp_index"] = max(20, min(60, self.current_metrics["column_dp_index"]))
-        
-        self.current_metrics["reactor_temp_oscillation"] += random.uniform(-0.05, 0.08)
-        self.current_metrics["reactor_temp_oscillation"] = max(0.2, min(1.5, self.current_metrics["reactor_temp_oscillation"]))
-        
-        self.current_metrics["aa_dimer"] += random.uniform(-0.01, 0.02)
-        self.current_metrics["aa_dimer"] = max(0.15, min(0.50, self.current_metrics["aa_dimer"]))
-        
-        self.current_metrics["mehq"] += random.uniform(-3, 2)
-        self.current_metrics["mehq"] = max(150, min(220, self.current_metrics["mehq"]))
-        
-        self.current_metrics["excursion_count"] = max(0, min(8, self.current_metrics["excursion_count"] + random.choice([-1, 0, 0, 1])))
-    
-    def _process_injected_events(self):
-        remaining_events = []
-        for event in self.injected_events:
-            event["remaining_steps"] -= 1
-            if event["remaining_steps"] > 0:
-                remaining_events.append(event)
-                self._apply_event_effect(event)
-        self.injected_events = remaining_events
-    
-    def _apply_event_effect(self, event):
-        if event["type"] == "cw_spike":
-            self.current_metrics["cw_inlet_temp"] += 0.8
-        elif event["type"] == "inhibitor_interruption":
-            self.current_metrics["inhibitor_continuity"] -= 1.5
-        elif event["type"] == "dimer_rise":
-            self.current_metrics["aa_dimer"] += 0.04
-        elif event["type"] == "dp_increase":
-            self.current_metrics["column_dp_index"] += 4
-    
-    def inject_event(self, event_type: str, duration_steps: int = 4):
-        event = {
-            "type": event_type,
-            "remaining_steps": duration_steps,
-            "injected_at": self.simulated_time.isoformat(),
-            "day": self.current_day
-        }
-        self.injected_events.append(event)
-        
-        # Add to timeline
-        event_names = {
-            "cw_spike": "CW Temperature Spike",
-            "inhibitor_interruption": "Inhibitor Dosing Interruption",
-            "dimer_rise": "AA Dimer Rise Detected",
-            "dp_increase": "Column ΔP Increase"
-        }
-        self.timeline_events.append({
-            "id": str(uuid.uuid4())[:8],
-            "timestamp": self.simulated_time.isoformat(),
-            "day": self.current_day,
-            "event_type": event_type,
-            "title": event_names.get(event_type, event_type),
-            "description": f"Event detected at Day {self.current_day}",
-            "triggered_actions": []
-        })
-        
-        # Immediately apply first effect
-        self._apply_event_effect(event)
-        
-        return event
-
-sim_state = SimulationState()
-
-# Historical runs data
-HISTORICAL_RUNS = [
-    {"run_id": "RUN-2024-06", "start_ts": "2024-06-01T08:00:00Z", "end_ts": "2024-06-25T14:30:00Z", "duration_days": 24, "end_reason": "Polymerization/Fouling", "notes": "Early fouling in column internals", "is_golden": False},
-    {"run_id": "RUN-2024-07", "start_ts": "2024-07-05T08:00:00Z", "end_ts": "2024-08-18T10:00:00Z", "duration_days": 44, "end_reason": "Polymerization/Fouling", "notes": "Inhibitor supply issue mid-run", "is_golden": False},
-    {"run_id": "RUN-2024-08", "start_ts": "2024-08-25T08:00:00Z", "end_ts": "2024-09-08T16:00:00Z", "duration_days": 14, "end_reason": "Planned Shutdown", "notes": "Scheduled turnaround", "is_golden": False},
-    {"run_id": "RUN-2024-09", "start_ts": "2024-09-20T08:00:00Z", "end_ts": "2024-11-28T12:00:00Z", "duration_days": 69, "end_reason": "Polymerization/Fouling", "notes": "CW temperature issues in late run", "is_golden": False},
-    {"run_id": "RUN-2024-12", "start_ts": "2024-12-02T17:20:00Z", "end_ts": "2025-03-23T07:06:00Z", "duration_days": 111, "end_reason": "Golden Run Candidate", "notes": "Baseline reference window: 02-Dec-2024 to 23-Mar-2025", "is_golden": True},
-    {"run_id": "RUN-2025-04", "start_ts": "2025-04-01T08:00:00Z", "end_ts": "2025-04-22T14:00:00Z", "duration_days": 21, "end_reason": "Utilities Interruption", "notes": "Power grid issue caused emergency shutdown", "is_golden": False},
-    {"run_id": "RUN-2025-05", "start_ts": "2025-05-01T08:00:00Z", "end_ts": "2025-06-28T10:00:00Z", "duration_days": 58, "end_reason": "Polymerization/Fouling", "notes": "Gradual ΔP buildup", "is_golden": False},
-    {"run_id": "RUN-2025-07", "start_ts": "2025-07-10T08:00:00Z", "end_ts": "2025-08-25T16:00:00Z", "duration_days": 46, "end_reason": "Polymerization/Fouling", "notes": "Dimer levels exceeded limits", "is_golden": False},
-    {"run_id": "RUN-2025-09", "start_ts": "2025-09-01T08:00:00Z", "end_ts": "2025-09-10T12:00:00Z", "duration_days": 9, "end_reason": "Planned Shutdown", "notes": "Catalyst replacement window", "is_golden": False},
-    {"run_id": "RUN-2025-10", "start_ts": "2025-10-15T08:00:00Z", "end_ts": "2025-12-02T14:00:00Z", "duration_days": 48, "end_reason": "Polymerization/Fouling", "notes": "Reactor oscillation issues", "is_golden": False}
-]
-
-def get_phase(day: int) -> str:
-    phases = GOLDEN_CONFIG["phases"]
-    if day <= phases["early"]["end"]:
-        return "early"
-    elif day <= phases["mid"]["end"]:
-        return "mid"
-    return "late"
-
-def get_metric_band(metric_key: str, phase: str) -> dict:
-    return GOLDEN_CONFIG["metrics"][metric_key]["bands"][phase]
-
-def check_deviations():
-    """Check current metrics against golden bands and generate/update action cards"""
-    phase = get_phase(sim_state.current_day)
-    metrics = sim_state.current_metrics
-    
-    deviations = []
-    
-    for metric_key, metric_config in GOLDEN_CONFIG["metrics"].items():
-        band = metric_config["bands"][phase]
-        current_val = metrics.get(metric_key.replace("_", "_"), metrics.get(metric_key))
-        
-        if current_val is None:
-            continue
-            
-        is_violated = False
-        deviation_str = ""
-        band_str = ""
-        
-        if "max" in band:
-            if current_val > band["max"]:
-                is_violated = True
-                deviation_str = f"+{current_val - band['max']:.2f}"
-                band_str = f"≤{band['max']}"
-        if "min" in band:
-            if current_val < band["min"]:
-                is_violated = True
-                deviation_str = f"{current_val - band['min']:.2f}"
-                band_str = f"≥{band['min']}"
-        
-        if is_violated:
-            deviations.append({
-                "metric_key": metric_key,
-                "metric_name": metric_config["name"],
-                "unit": metric_config["unit"],
-                "current_value": current_val,
-                "band": band,
-                "band_str": band_str,
-                "deviation_str": deviation_str,
-                "protects": metric_config["protects"],
-                "action_template": metric_config["action_template"]
-            })
-    
-    # Create action cards for new deviations
-    for dev in deviations:
-        existing_action = None
-        for action_id, action in sim_state.actions.items():
-            if action["trigger"]["metric"] == dev["metric_name"] and action["status"] not in ["Done", "Not feasible"]:
-                existing_action = action
-                break
-        
-        if not existing_action:
-            action_id = f"AC-{sim_state.action_counter:03d}"
-            sim_state.action_counter += 1
-            
-            # Format current value
-            cv = dev['current_value']
-            current_val_str = f"{cv:.2f}" if isinstance(cv, float) else str(cv)
-            
-            # Calculate impact estimates based on deviation severity and metric type
-            impact = calculate_action_impact(dev["metric_key"], dev["current_value"], dev["band"], sim_state.current_day)
-            
-            action = {
-                "id": action_id,
-                "title": dev["action_template"]["title"],
-                "protects": dev["protects"],
-                "trigger": {
-                    "metric": dev["metric_name"],
-                    "golden_band": f"{dev['band_str']} {dev['unit']}",
-                    "current_value": f"{current_val_str} {dev['unit']}",
-                    "deviation": dev["deviation_str"],
-                    "time_window": "Last 6 hours"
-                },
-                "evidence": [
-                    f"Current: {current_val_str} {dev['unit']}",
-                    f"Golden band ({get_phase(sim_state.current_day)} phase): {dev['band_str']} {dev['unit']}",
-                    f"Run day: {sim_state.current_day}"
-                ],
-                "action_checklist": dev["action_template"]["checklist"],
-                "expected_effect": dev["action_template"]["expected_effect"].replace("{max}", str(dev['band'].get('max', ''))).replace("{min}", str(dev['band'].get('min', ''))),
-                "impact": impact,
-                "status": "New",
-                "note": "",
-                "created_at": sim_state.simulated_time.isoformat(),
-                "updated_at": sim_state.simulated_time.isoformat()
-            }
-            sim_state.actions[action_id] = action
-    
-    return deviations
-
-def calculate_action_impact(metric_key: str, current_value: float, band: dict, current_day: int):
-    """Calculate the impact of taking action on this deviation"""
-    
-    # Define impact mappings for each metric
-    impact_config = {
-        "cw_inlet_temp": {
-            "risk_reduction": {"7d": 8, "14d": 12, "30d": 15},
-            "productivity_impact": "Prevents accelerated fouling, maintains heat transfer efficiency",
-            "run_length_impact": "Each 1°C above band accelerates polymerization by ~3-5%",
-            "urgency": "High" if current_value > (band.get("max", 30) + 1) else "Medium"
-        },
-        "inhibitor_continuity": {
-            "risk_reduction": {"7d": 15, "14d": 20, "30d": 25},
-            "productivity_impact": "Ensures consistent product quality and prevents polymer buildup",
-            "run_length_impact": "Interruptions >30min can initiate irreversible polymerization chains",
-            "urgency": "Critical" if current_value < 98 else "High"
-        },
-        "column_dp_index": {
-            "risk_reduction": {"7d": 5, "14d": 10, "30d": 18},
-            "productivity_impact": "Maintains separation efficiency and throughput capacity",
-            "run_length_impact": "ΔP >50 typically indicates 70%+ fouling, limiting remaining run life",
-            "urgency": "High" if current_value > 50 else "Medium"
-        },
-        "reactor_temp_oscillation": {
-            "risk_reduction": {"7d": 6, "14d": 10, "30d": 14},
-            "productivity_impact": "Stabilizes reaction selectivity and product yield",
-            "run_length_impact": "Oscillation >1.2°C indicates control degradation requiring intervention",
-            "urgency": "Medium"
-        },
-        "aa_dimer": {
-            "risk_reduction": {"7d": 4, "14d": 8, "30d": 12},
-            "productivity_impact": "Preserves product purity and reduces downstream processing load",
-            "run_length_impact": "Dimer >0.4% signals advanced polymerization, typically 2-3 weeks to limit",
-            "urgency": "High" if current_value > 0.38 else "Medium"
-        },
-        "mehq": {
-            "risk_reduction": {"7d": 12, "14d": 18, "30d": 22},
-            "productivity_impact": "Maintains inhibition effectiveness throughout the process",
-            "run_length_impact": "MeHQ <170 ppm creates polymerization risk zones in dead legs",
-            "urgency": "Critical" if current_value < 175 else "High"
-        },
-        "excursion_count": {
-            "risk_reduction": {"7d": 7, "14d": 12, "30d": 16},
-            "productivity_impact": "Reduces process variability and maintains consistent operation",
-            "run_length_impact": "Each excursion adds cumulative stress to the system",
-            "urgency": "Medium"
-        }
-    }
-    
-    config = impact_config.get(metric_key, {
-        "risk_reduction": {"7d": 5, "14d": 8, "30d": 10},
-        "productivity_impact": "Restores parameter to optimal range",
-        "run_length_impact": "Reduces deviation-related stress on system",
-        "urgency": "Medium"
-    })
-    
-    # Adjust based on run day (later in run = higher impact)
-    day_multiplier = 1.0 + (current_day / 111) * 0.5  # Up to 50% more impact late in run
-    
-    return {
-        "risk_reduction": {
-            "7_day": int(config["risk_reduction"]["7d"] * day_multiplier),
-            "14_day": int(config["risk_reduction"]["14d"] * day_multiplier),
-            "30_day": int(config["risk_reduction"]["30d"] * day_multiplier)
-        },
-        "productivity_impact": config["productivity_impact"],
-        "run_length_impact": config["run_length_impact"],
-        "urgency": config["urgency"],
-        "confidence": "High" if current_day < 70 else "Medium"
-    }
-
-def calculate_projections():
-    """Calculate run-length projections based on current state"""
-    golden_days = GOLDEN_CONFIG["projection_settings"]["golden_run_days"]
-    current_day = sim_state.current_day
-    
-    # Base remaining days on golden target
-    base_remaining = golden_days - current_day
-    
-    # Adjust based on active deviations
-    active_actions = [a for a in sim_state.actions.values() if a["status"] not in ["Done", "Not feasible"]]
-    deviation_penalty = len(active_actions) * 5
-    
-    # Calculate risk factors
-    metrics = sim_state.current_metrics
-    phase = get_phase(current_day)
-    
-    risk_score = 0
-    risk_factors = []
-    
-    # CW temp risk
-    cw_band = get_metric_band("cw_inlet_temp", phase)
-    if metrics["cw_inlet_temp"] > cw_band["max"]:
-        risk_score += 0.25
-        risk_factors.append(f"CW inlet temp at {metrics['cw_inlet_temp']:.1f}°C (>{cw_band['max']}°C)")
-    
-    # ΔP index risk
-    dp_band = get_metric_band("column_dp_index", phase)
-    if metrics["column_dp_index"] > dp_band["max"]:
-        risk_score += 0.30
-        risk_factors.append(f"ΔP Index at {metrics['column_dp_index']:.0f} (>{dp_band['max']})")
-    
-    # Excursion risk
-    exc_band = get_metric_band("excursion_count", phase)
-    if metrics["excursion_count"] > exc_band["max"]:
-        risk_score += 0.20
-        risk_factors.append(f"Excursions at {metrics['excursion_count']}/24h (>{exc_band['max']})")
-    
-    # Inhibitor risk
-    inh_band = get_metric_band("inhibitor_continuity", phase)
-    if metrics["inhibitor_continuity"] < inh_band["min"]:
-        risk_score += 0.35
-        risk_factors.append(f"Inhibitor continuity at {metrics['inhibitor_continuity']:.1f}% (<{inh_band['min']}%)")
-    
-    # Calculate projected remaining days
-    projected_remaining = max(5, base_remaining - deviation_penalty - int(risk_score * 20))
-    projected_end = sim_state.simulated_time + timedelta(days=projected_remaining)
-    
-    # Date window (±3-7 days based on confidence)
-    window_margin = 3 if risk_score < 0.3 else (5 if risk_score < 0.5 else 7)
-    projected_end_early = projected_end - timedelta(days=window_margin)
-    projected_end_late = projected_end + timedelta(days=window_margin)
-    
-    # Confidence level
-    confidence = "High" if risk_score < 0.2 else ("Medium" if risk_score < 0.5 else "Low")
-    
-    # Risk of ending within windows
-    risk_7d = min(95, max(5, int(risk_score * 100 + len(active_actions) * 5)))
-    risk_14d = min(95, max(10, int(risk_7d * 1.3)))
-    risk_30d = min(95, max(15, int(risk_7d * 1.8)))
-    
-    # Productivity risk
-    dp_dev = max(0, metrics["column_dp_index"] - dp_band["max"]) / dp_band["max"]
-    exc_dev = max(0, metrics["excursion_count"] - exc_band["max"]) / max(1, exc_band["max"])
-    cw_dev = max(0, metrics["cw_inlet_temp"] - cw_band["max"]) / cw_band["max"]
-    
-    prod_score = dp_dev * 0.4 + exc_dev * 0.35 + cw_dev * 0.25
-    productivity_status = "Stable" if prod_score < 0.15 else "At Risk"
-    productivity_reason = ", ".join(risk_factors[:2]) if risk_factors else "All key metrics within golden bands"
-    
-    return {
-        "golden_target_days": golden_days,
-        "current_day": current_day,
-        "projected_remaining_days": projected_remaining,
-        "projected_total_days": current_day + projected_remaining,
-        "projected_end_date": projected_end.strftime("%b %d"),
-        "projected_end_window": f"{projected_end_early.strftime('%b %d')}–{projected_end_late.strftime('%b %d')}",
-        "gap_to_golden": projected_remaining + current_day - golden_days,
-        "confidence": confidence,
-        "risk_7d": risk_7d,
-        "risk_14d": risk_14d,
-        "risk_30d": risk_30d,
-        "productivity_status": productivity_status,
-        "productivity_reason": productivity_reason,
-        "risk_factors": risk_factors,
-        "active_action_count": len(active_actions)
-    }
-
-def get_threats_and_actions():
-    """Get top threats and recommended actions"""
-    check_deviations()
-    
-    active_actions = [a for a in sim_state.actions.values() if a["status"] not in ["Done", "Not feasible"]]
-    
-    # Sort by severity (Run-length > Both > Productivity)
-    priority_order = {"Both": 0, "Run-length": 1, "Productivity": 2}
-    sorted_actions = sorted(active_actions, key=lambda x: priority_order.get(x["protects"], 3))
-    
-    threats = []
-    for action in sorted_actions[:3]:
-        threats.append({
-            "metric": action["trigger"]["metric"],
-            "current": action["trigger"]["current_value"],
-            "band": action["trigger"]["golden_band"],
-            "deviation": action["trigger"]["deviation"],
-            "protects": action["protects"]
-        })
-    
-    return {
-        "threats": threats,
-        "actions": sorted_actions[:3]
-    }
-
-# API Routes
 @api_router.get("/")
 async def root():
-    return {"message": "KR AA Run Health OS API", "status": "operational"}
+    return {"message": "KR AA Run Health OS API", "status": "operational", "version": "2.0"}
 
-@api_router.get("/config")
-async def get_config():
-    return GOLDEN_CONFIG
-
-@api_router.get("/runs")
-async def get_runs():
-    # Add current run
-    current_run = {
-        "run_id": "RUN-CURRENT",
-        "start_ts": sim_state.current_run_start.isoformat(),
-        "end_ts": None,
-        "duration_days": sim_state.current_day,
-        "end_reason": "In Progress",
-        "notes": "Current live run",
-        "is_golden": False,
-        "is_current": True
+@api_router.get("/run-info")
+async def get_run_info():
+    """Get golden run metadata"""
+    return {
+        "run_id": RUN_SEED["golden_run_candidate"]["run_id"],
+        "start_ts": RUN_SEED["golden_run_candidate"]["start_ts"],
+        "end_ts": RUN_SEED["golden_run_candidate"]["end_ts"],
+        "target_days": RUN_SEED["kpi_targets"]["target_run_length_days"],
+        "output_band": RUN_SEED["kpi_targets"]["target_output_tpd_band"],
+        "assets": RUN_SEED["assets_dictionary"]
     }
-    return {"historical": HISTORICAL_RUNS, "current": current_run}
 
-@api_router.get("/metrics")
-async def get_metrics():
-    check_deviations()
-    phase = get_phase(sim_state.current_day)
-    
-    metrics_with_bands = {}
-    for key, value in sim_state.current_metrics.items():
-        config = GOLDEN_CONFIG["metrics"].get(key, {})
-        band = config.get("bands", {}).get(phase, {})
-        metrics_with_bands[key] = {
-            "value": value,
-            "unit": config.get("unit", ""),
-            "name": config.get("name", key),
-            "band": band,
-            "phase": phase,
-            "protects": config.get("protects", "")
+@api_router.get("/day/{day}")
+async def get_day_data(day: int):
+    """Get all metrics for a specific day"""
+    return sim_engine.get_day_data(day)
+
+@api_router.get("/time-series")
+async def get_time_series(start: int = 1, end: int = 111):
+    """Get time series for a range of days"""
+    return {
+        "series": sim_engine.get_time_series_range(start, end),
+        "total_days": end - start + 1
+    }
+
+@api_router.get("/what-changed/{day}")
+async def get_what_changed(day: int):
+    """Get what changed in last 7 days"""
+    return {
+        "current_day": day,
+        "changes": sim_engine.get_what_changed(day)
+    }
+
+@api_router.get("/events")
+async def get_events():
+    """Get all operational events"""
+    return {
+        "events": OPS_EVENTS["events"],
+        "shift_logs": OPS_EVENTS["shift_logs"],
+        "lab_results": OPS_EVENTS["lab_results"],
+        "pipeline_status": OPS_EVENTS["data_pipeline_status"]
+    }
+
+@api_router.post("/simulate")
+async def simulate_what_if(request: SimulatorRequest):
+    """Run what-if simulation"""
+    return sim_engine.simulate_what_if(
+        request.day,
+        {
+            "cleaning_cadence": request.cleaning_cadence,
+            "inhibitor_dose_index": request.inhibitor_dose_index,
+            "flush_frequency": request.flush_frequency,
+            "intervention_discipline": request.intervention_discipline
         }
-    
-    return {
-        "timestamp": sim_state.simulated_time.isoformat(),
-        "run_day": sim_state.current_day,
-        "phase": GOLDEN_CONFIG["phases"][phase]["label"],
-        "metrics": metrics_with_bands,
-        "history": sim_state.metrics_history[-20:]
-    }
-
-@api_router.get("/projections")
-async def get_projections():
-    check_deviations()
-    return calculate_projections()
-
-@api_router.get("/actions")
-async def get_actions():
-    check_deviations()
-    return {
-        "actions": list(sim_state.actions.values()),
-        "active_count": len([a for a in sim_state.actions.values() if a["status"] not in ["Done", "Not feasible"]]),
-        "done_count": len([a for a in sim_state.actions.values() if a["status"] == "Done"])
-    }
+    )
 
 @api_router.post("/actions/{action_id}/status")
 async def update_action_status(action_id: str, update: ActionStatusUpdate):
-    if action_id not in sim_state.actions:
-        raise HTTPException(status_code=404, detail="Action not found")
-    
-    action = sim_state.actions[action_id]
-    action["status"] = update.status
-    action["note"] = update.note or action["note"]
-    action["updated_at"] = sim_state.simulated_time.isoformat()
-    
-    # If marked done, slightly improve related metric
-    if update.status == "Done":
-        metric_name = action["trigger"]["metric"]
-        metric_key_map = {
-            "CW Inlet Temperature": "cw_inlet_temp",
-            "Inhibitor Dosing Continuity": "inhibitor_continuity",
-            "Column ΔP Index": "column_dp_index",
-            "Reactor Temp Oscillation": "reactor_temp_oscillation",
-            "AA Dimer": "aa_dimer",
-            "MeHQ": "mehq",
-            "Excursion Count": "excursion_count"
-        }
-        key = metric_key_map.get(metric_name)
-        if key:
-            if key in ["inhibitor_continuity", "mehq"]:
-                sim_state.current_metrics[key] = min(100 if key == "inhibitor_continuity" else 220, 
-                                                      sim_state.current_metrics[key] + (2 if key == "inhibitor_continuity" else 15))
-            else:
-                sim_state.current_metrics[key] = max(0, sim_state.current_metrics[key] * 0.85)
-    
-    return action
-
-@api_router.get("/threats")
-async def get_threats():
-    return get_threats_and_actions()
-
-@api_router.get("/timeline")
-async def get_timeline():
+    """Update action status"""
+    # In a real app, this would persist to DB
     return {
-        "events": sim_state.timeline_events,
-        "metrics_trend": sim_state.metrics_history,
-        "current_day": sim_state.current_day
+        "action_id": action_id,
+        "new_status": update.status,
+        "reason_code": update.reason_code,
+        "note": update.note,
+        "updated_at": datetime.now(timezone.utc).isoformat()
     }
 
-@api_router.get("/golden-comparison")
-async def get_golden_comparison():
-    check_deviations()
-    phase = get_phase(sim_state.current_day)
-    
-    comparisons = []
-    for key, config in GOLDEN_CONFIG["metrics"].items():
-        band = config["bands"][phase]
-        current_val = sim_state.current_metrics.get(key)
-        
-        if current_val is None:
-            continue
-        
-        is_ok = True
-        deviation = 0
-        if "max" in band:
-            is_ok = current_val <= band["max"]
-            deviation = current_val - band["max"]
-        elif "min" in band:
-            is_ok = current_val >= band["min"]
-            deviation = current_val - band["min"]
-        
-        comparisons.append({
-            "metric_key": key,
-            "metric_name": config["name"],
-            "unit": config["unit"],
-            "golden_band": f"{'≤' if 'max' in band else '≥'}{band.get('max', band.get('min'))}",
-            "current_value": round(current_val, 2) if isinstance(current_val, float) else current_val,
-            "deviation": round(deviation, 2),
-            "is_within_band": is_ok,
-            "protects": config["protects"],
-            "phase": phase
-        })
-    
-    # Find related actions for deviations
-    deviating = [c for c in comparisons if not c["is_within_band"]]
-    
-    return {
-        "run_day": sim_state.current_day,
-        "phase": GOLDEN_CONFIG["phases"][phase]["label"],
-        "comparisons": comparisons,
-        "deviations_count": len(deviating),
-        "focus_areas": deviating[:4]
-    }
-
-@api_router.get("/data-freshness")
-async def get_data_freshness():
-    now = datetime.now(timezone.utc)
-    last_update_age = (now - sim_state.last_update).total_seconds() / 3600
-    
-    stale_threshold = GOLDEN_CONFIG["projection_settings"]["stale_threshold_hours"]
-    confidence_decay = GOLDEN_CONFIG["projection_settings"]["confidence_decay_hours"]
-    
-    confidence = "High"
-    if last_update_age > confidence_decay:
-        confidence = "Medium"
-    if last_update_age > stale_threshold * 2:
-        confidence = "Low"
-    
-    stale_metrics = []
-    flatline_flags = []
-    
-    # Check for stale lab results (simulated)
-    if sim_state.current_day > 3 and random.random() < 0.1:
-        stale_metrics.append("AA Dimer (lab sample pending)")
-    
-    return {
-        "last_data_ts": sim_state.simulated_time.isoformat(),
-        "last_scoring_ts": sim_state.last_update.isoformat(),
-        "real_time_now": now.isoformat(),
-        "simulated_time": sim_state.simulated_time.isoformat(),
-        "run_day": sim_state.current_day,
-        "stale_metrics": stale_metrics,
-        "flatline_flags": flatline_flags,
-        "is_paused": sim_state.is_paused,
-        "confidence": confidence,
-        "last_update_age_hours": round(last_update_age, 2)
-    }
-
-# Demo control endpoints
-@api_router.post("/demo/advance-time")
-async def demo_advance_time():
-    sim_state.advance_time(6)
-    check_deviations()
-    return {
-        "message": "Advanced 6 hours",
-        "new_day": sim_state.current_day,
-        "simulated_time": sim_state.simulated_time.isoformat()
-    }
-
-@api_router.post("/demo/inject-event")
-async def demo_inject_event(request: DemoEventRequest):
-    event = sim_state.inject_event(request.event_type, request.duration_steps or 4)
-    check_deviations()
-    return {
-        "message": f"Injected {request.event_type}",
-        "event": event,
-        "current_metrics": sim_state.current_metrics
-    }
-
-@api_router.post("/demo/resolve-action")
-async def demo_resolve_action():
-    """Auto-resolve the oldest active action"""
-    active = [a for a in sim_state.actions.values() if a["status"] not in ["Done", "Not feasible"]]
-    if not active:
-        return {"message": "No active actions to resolve"}
-    
-    action = active[0]
-    action["status"] = "Done"
-    action["note"] = "Resolved via demo control"
-    action["updated_at"] = sim_state.simulated_time.isoformat()
-    
-    return {"message": f"Resolved {action['id']}", "action": action}
-
-@api_router.post("/demo/pause")
-async def demo_pause():
-    sim_state.is_paused = True
-    return {"message": "Data feed paused", "is_paused": True}
-
-@api_router.post("/demo/resume")
-async def demo_resume():
-    sim_state.is_paused = False
-    sim_state.last_update = datetime.now(timezone.utc)
-    return {"message": "Data feed resumed", "is_paused": False}
-
-@api_router.post("/demo/reset")
-async def demo_reset():
-    sim_state.reset()
-    return {"message": "Simulation reset", "current_day": sim_state.current_day}
-
-@api_router.post("/demo/inject-missing")
-async def demo_inject_missing():
-    """Simulate a missing metric"""
-    return {"message": "Missing metric injected (simulation placeholder)"}
-
-@api_router.post("/demo/set-day")
-async def demo_set_day(request: DayScenarioRequest):
-    """Set the simulation to a specific day scenario"""
-    description = sim_state.set_day_scenario(request.day)
-    check_deviations()
-    return {
-        "message": f"Set to Day {request.day}",
-        "current_day": sim_state.current_day,
-        "description": description,
-        "metrics": sim_state.current_metrics,
-        "actions_count": len([a for a in sim_state.actions.values() if a["status"] not in ["Done", "Not feasible"]])
-    }
-
-@api_router.get("/demo/available-days")
-async def get_available_days():
-    """Get list of available day scenarios for the dropdown"""
+@api_router.get("/quick-days")
+async def get_quick_days():
+    """Get quick jump day options"""
     return {
         "days": [
-            {"day": 1, "label": "Day 1 - Fresh Start", "risk_level": "Low"},
-            {"day": 18, "label": "Day 18 - Early Run", "risk_level": "Low"},
-            {"day": 35, "label": "Day 35 - Mid Run", "risk_level": "Medium"},
-            {"day": 55, "label": "Day 55 - Late-Mid Run", "risk_level": "Medium"},
-            {"day": 70, "label": "Day 70 - Late Run", "risk_level": "High"},
-            {"day": 90, "label": "Day 90 - Critical Phase", "risk_level": "High"},
-            {"day": 105, "label": "Day 105 - Final Stretch", "risk_level": "Critical"}
+            {"day": 1, "label": "Day 1", "phase": "Startup"},
+            {"day": 7, "label": "Day 7", "phase": "Early"},
+            {"day": 18, "label": "Day 18", "phase": "Early-Mid"},
+            {"day": 30, "label": "Day 30", "phase": "Mid"},
+            {"day": 70, "label": "Day 70", "phase": "Late"},
+            {"day": 110, "label": "Day 110", "phase": "End"}
         ]
+    }
+
+@api_router.get("/intervention-window/{day}")
+async def get_intervention_window(day: int):
+    """Get recommended intervention window"""
+    data = sim_engine.get_day_data(day)
+    
+    # Calculate optimal window based on risk trajectory
+    if data["fouling_risk_index"] > 5:
+        window_start = day + 3
+        window_end = day + 10
+        urgency = "high"
+        reason = "Fouling risk elevated; intervention now reduces unplanned shutdown risk by ~25%"
+    elif data["fouling_risk_index"] > 3.5:
+        window_start = day + 7
+        window_end = day + 15
+        urgency = "medium"
+        reason = "Proactive window; intervention here extends run by estimated 5-10 days"
+    else:
+        window_start = None
+        window_end = None
+        urgency = "low"
+        reason = "No immediate intervention needed; continue monitoring"
+    
+    return {
+        "current_day": day,
+        "window_start": window_start,
+        "window_end": window_end,
+        "urgency": urgency,
+        "reason": reason
     }
 
 # Include router
