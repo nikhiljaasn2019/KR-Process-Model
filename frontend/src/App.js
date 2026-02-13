@@ -26,7 +26,7 @@ export const api = axios.create({
 export const AppContext = createContext(null);
 
 function App() {
-  const [currentDay, setCurrentDay] = useState(30);
+  const [currentDay, setCurrentDay] = useState(70); // Default to Day 70 - critical moment
   const [dayData, setDayData] = useState(null);
   const [runInfo, setRunInfo] = useState(null);
   const [timeSeries, setTimeSeries] = useState([]);
@@ -35,17 +35,20 @@ function App() {
   const [quickDays, setQuickDays] = useState([]);
   const [actionStatuses, setActionStatuses] = useState({});
   const [events, setEvents] = useState(null);
+  const [scenarioComparison, setScenarioComparison] = useState(null);
+  const [scenarioMode, setScenarioMode] = useState("do_nothing"); // "do_nothing" or "execute_moves"
 
   const fetchData = useCallback(async (day) => {
     try {
-      const [dayRes, runRes, seriesRes, changedRes, quickRes, statusesRes, eventsRes] = await Promise.all([
+      const [dayRes, runRes, seriesRes, changedRes, quickRes, statusesRes, eventsRes, scenarioRes] = await Promise.all([
         api.get(`/day/${day}`),
         api.get("/run-info"),
         api.get(`/time-series?start=1&end=${day}`),
         api.get(`/what-changed/${day}`),
         api.get("/quick-days"),
         api.get("/actions/statuses"),
-        api.get("/events")
+        api.get("/events"),
+        api.get(`/scenario-comparison/${day}`)
       ]);
       
       setDayData(dayRes.data);
@@ -54,6 +57,7 @@ function App() {
       setWhatChanged(changedRes.data.changes);
       setQuickDays(quickRes.data.days);
       setEvents(eventsRes.data);
+      setScenarioComparison(scenarioRes.data);
       
       // Convert statuses array to map
       const statusMap = {};
@@ -93,6 +97,20 @@ function App() {
       }));
       
       toast.success(`Action marked as ${status}`);
+      
+      // If marked as Done, refresh scenario comparison to show impact
+      if (status === "Done") {
+        const scenarioRes = await api.get(`/scenario-comparison/${currentDay}`);
+        setScenarioComparison(scenarioRes.data);
+        // Refresh day data to get updated metrics
+        const dayRes = await api.post(`/apply-action-impact/${currentDay}`, [actionId]);
+        if (dayRes.data.adjusted) {
+          setDayData(prev => ({
+            ...prev,
+            ...dayRes.data.adjusted
+          }));
+        }
+      }
     } catch (error) {
       console.error("Error updating action status:", error);
       toast.error("Failed to update action status");
@@ -111,7 +129,10 @@ function App() {
     fetchData,
     actionStatuses,
     updateActionStatus,
-    events
+    events,
+    scenarioComparison,
+    scenarioMode,
+    setScenarioMode
   };
 
   return (
