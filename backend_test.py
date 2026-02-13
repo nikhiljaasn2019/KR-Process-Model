@@ -63,110 +63,123 @@ class KRAARunHealthAPITester:
         print("\n=== Testing Basic Endpoints ===")
         
         # Root endpoint
-        self.run_test("API Root", "GET", "", 200)
+        success, root_data = self.run_test("API Root", "GET", "", 200)
+        if success and root_data:
+            print(f"   Message: {root_data.get('message', 'N/A')}")
+            print(f"   Status: {root_data.get('status', 'N/A')}")
+            print(f"   Version: {root_data.get('version', 'N/A')}")
         
-        # Config endpoint
-        self.run_test("Golden Config", "GET", "config", 200)
-        
-        # Runs endpoint
-        self.run_test("Runs Data", "GET", "runs", 200)
+        # Run info endpoint
+        success, run_data = self.run_test("Run Info", "GET", "run-info", 200)
+        if success and run_data:
+            print(f"   Run ID: {run_data.get('run_id', 'N/A')}")
+            print(f"   Target days: {run_data.get('target_days', 'N/A')}")
+            print(f"   Assets count: {len(run_data.get('assets', []))}")
 
-    def test_metrics_and_projections(self):
-        """Test metrics and projections endpoints"""
-        print("\n=== Testing Metrics & Projections ===")
+    def test_day_data_endpoints(self):
+        """Test day-specific data endpoints"""
+        print("\n=== Testing Day Data Endpoints ===")
         
-        # Metrics
-        success, metrics_data = self.run_test("Current Metrics", "GET", "metrics", 200)
-        if success and metrics_data:
-            print(f"   Metrics count: {len(metrics_data.get('metrics', {}))}")
-            print(f"   Current day: {metrics_data.get('run_day', 'N/A')}")
-        
-        # Projections
-        success, proj_data = self.run_test("Run Projections", "GET", "projections", 200)
-        if success and proj_data:
-            print(f"   Current day: {proj_data.get('current_day', 'N/A')}")
-            print(f"   Projected total: {proj_data.get('projected_total_days', 'N/A')}")
-            print(f"   Gap to golden: {proj_data.get('gap_to_golden', 'N/A')}")
+        # Test different days
+        test_days = [1, 30, 70, 110]
+        for day in test_days:
+            success, day_data = self.run_test(f"Day {day} Data", "GET", f"day/{day}", 200)
+            if success and day_data:
+                print(f"   Day {day} - Health Score: {day_data.get('run_health_score', 'N/A')}")
+                print(f"   Day {day} - Remaining Days: {day_data.get('predicted_remaining_days', 'N/A')}")
+                print(f"   Day {day} - Output TPD: {day_data.get('eaa_output_tpd', 'N/A')}")
+                print(f"   Day {day} - Drivers count: {len(day_data.get('drivers', []))}")
+                print(f"   Day {day} - Actions count: {len(day_data.get('actions', []))}")
 
-    def test_actions_workflow(self):
-        """Test actions endpoints and workflow"""
-        print("\n=== Testing Actions Workflow ===")
+    def test_time_series_endpoints(self):
+        """Test time series endpoints"""
+        print("\n=== Testing Time Series Endpoints ===")
         
-        # Get actions
-        success, actions_data = self.run_test("Get Actions", "GET", "actions", 200)
-        if success and actions_data:
-            actions = actions_data.get('actions', [])
-            print(f"   Total actions: {len(actions)}")
-            print(f"   Active count: {actions_data.get('active_count', 0)}")
+        # Time series for range
+        success, series_data = self.run_test("Time Series (1-30)", "GET", "time-series?start=1&end=30", 200)
+        if success and series_data:
+            series = series_data.get('series', [])
+            print(f"   Series length: {len(series)}")
+            print(f"   Total days: {series_data.get('total_days', 'N/A')}")
+            if series:
+                print(f"   First day: {series[0].get('day', 'N/A')}")
+                print(f"   Last day: {series[-1].get('day', 'N/A')}")
+        
+        # What changed endpoint
+        success, changed_data = self.run_test("What Changed (Day 30)", "GET", "what-changed/30", 200)
+        if success and changed_data:
+            changes = changed_data.get('changes', [])
+            print(f"   Current day: {changed_data.get('current_day', 'N/A')}")
+            print(f"   Changes count: {len(changes)}")
+
+    def test_events_endpoint(self):
+        """Test events endpoint"""
+        print("\n=== Testing Events Endpoint ===")
+        
+        success, events_data = self.run_test("Events Data", "GET", "events", 200)
+        if success and events_data:
+            events = events_data.get('events', [])
+            shift_logs = events_data.get('shift_logs', [])
+            lab_results = events_data.get('lab_results', [])
+            pipeline_status = events_data.get('pipeline_status', [])
             
-            # Test action status update if actions exist
-            if actions:
-                action_id = actions[0]['id']
-                print(f"   Testing status update for action: {action_id}")
-                
-                # Test acknowledge
-                self.run_test(
-                    f"Acknowledge Action {action_id}", 
-                    "POST", 
-                    f"actions/{action_id}/status",
-                    200,
-                    {"status": "Acknowledged", "note": "Test acknowledgment"}
-                )
-                
-                # Test mark done
-                self.run_test(
-                    f"Mark Done Action {action_id}", 
-                    "POST", 
-                    f"actions/{action_id}/status",
-                    200,
-                    {"status": "Done", "note": "Test completion"}
-                )
-
-    def test_timeline_and_comparison(self):
-        """Test timeline and golden comparison endpoints"""
-        print("\n=== Testing Timeline & Comparison ===")
-        
-        # Timeline
-        success, timeline_data = self.run_test("Timeline Data", "GET", "timeline", 200)
-        if success and timeline_data:
-            events = timeline_data.get('events', [])
-            metrics_trend = timeline_data.get('metrics_trend', [])
             print(f"   Events count: {len(events)}")
-            print(f"   Metrics trend points: {len(metrics_trend)}")
-        
-        # Golden comparison
-        success, comp_data = self.run_test("Golden Comparison", "GET", "golden-comparison", 200)
-        if success and comp_data:
-            comparisons = comp_data.get('comparisons', [])
-            deviations = comp_data.get('deviations_count', 0)
-            print(f"   Comparisons count: {len(comparisons)}")
-            print(f"   Deviations: {deviations}")
-        
-        # Threats
-        self.run_test("Threats Data", "GET", "threats", 200)
+            print(f"   Shift logs count: {len(shift_logs)}")
+            print(f"   Lab results count: {len(lab_results)}")
+            print(f"   Pipeline status count: {len(pipeline_status)}")
+            
+            # Check event structure
+            if events:
+                event = events[0]
+                print(f"   First event - Day: {event.get('day', 'N/A')}")
+                print(f"   First event - Type: {event.get('type', 'N/A')}")
+                print(f"   First event - Severity: {event.get('severity', 'N/A')}")
 
-    def test_data_freshness(self):
-        """Test data freshness endpoint"""
-        print("\n=== Testing Data Freshness ===")
+    def test_simulation_endpoint(self):
+        """Test simulation endpoint"""
+        print("\n=== Testing Simulation Endpoint ===")
         
-        success, fresh_data = self.run_test("Data Freshness", "GET", "data-freshness", 200)
-        if success and fresh_data:
-            print(f"   Run day: {fresh_data.get('run_day', 'N/A')}")
-            print(f"   Is paused: {fresh_data.get('is_paused', 'N/A')}")
-            print(f"   Confidence: {fresh_data.get('confidence', 'N/A')}")
-            print(f"   Stale metrics: {len(fresh_data.get('stale_metrics', []))}")
+        # Test simulation with different parameters
+        sim_requests = [
+            {
+                "day": 30,
+                "cleaning_cadence": 0,
+                "inhibitor_dose_index": 1.0,
+                "flush_frequency": 0,
+                "intervention_discipline": "medium"
+            },
+            {
+                "day": 70,
+                "cleaning_cadence": 2,
+                "inhibitor_dose_index": 1.2,
+                "flush_frequency": 1,
+                "intervention_discipline": "high"
+            }
+        ]
+        
+        for i, sim_data in enumerate(sim_requests):
+            success, result = self.run_test(f"Simulation {i+1}", "POST", "simulate", 200, sim_data)
+            if success and result:
+                baseline = result.get('baseline', {})
+                simulated = result.get('simulated', {})
+                deltas = result.get('deltas', {})
+                
+                print(f"   Sim {i+1} - Baseline Health: {baseline.get('run_health_score', 'N/A')}")
+                print(f"   Sim {i+1} - Simulated Health: {simulated.get('run_health_score', 'N/A')}")
+                print(f"   Sim {i+1} - Health Delta: {deltas.get('health_score', 'N/A')}")
+                print(f"   Sim {i+1} - Remaining Days Delta: {deltas.get('remaining_days', 'N/A')}")
 
-    def test_day_scenario_selector(self):
-        """Test day scenario selector feature - NEW FEATURE"""
-        print("\n=== Testing Day Scenario Selector Feature ===")
+    def test_quick_days_endpoint(self):
+        """Test quick days endpoint"""
+        print("\n=== Testing Quick Days Endpoint ===")
         
-        # Test available days endpoint
-        success, days_data = self.run_test("Get Available Days", "GET", "demo/available-days", 200)
-        if success and days_data:
-            days = days_data.get('days', [])
-            print(f"   Available days count: {len(days)}")
-            expected_days = [1, 18, 35, 55, 70, 90, 105]
-            actual_days = [d['day'] for d in days]
+        success, quick_data = self.run_test("Quick Days", "GET", "quick-days", 200)
+        if success and quick_data:
+            days = quick_data.get('days', [])
+            print(f"   Quick days count: {len(days)}")
+            
+            expected_days = [1, 7, 18, 30, 70, 110]
+            actual_days = [d.get('day') for d in days]
             print(f"   Expected days: {expected_days}")
             print(f"   Actual days: {actual_days}")
             
@@ -176,129 +189,86 @@ class KRAARunHealthAPITester:
                 print(f"   ❌ Missing days: {missing_days}")
             else:
                 print(f"   ✅ All expected days present")
-        
-        # Test switching to different day scenarios
-        test_days = [1, 70, 90, 105]  # Test key scenarios
-        for day in test_days:
-            success, day_data = self.run_test(
-                f"Set Day {day} Scenario", 
-                "POST", 
-                "demo/set-day",
-                200,
-                {"day": day}
-            )
-            if success and day_data:
-                print(f"   Day {day} - Current day: {day_data.get('current_day', 'N/A')}")
-                print(f"   Day {day} - Description: {day_data.get('description', 'N/A')}")
-                print(f"   Day {day} - Actions count: {day_data.get('actions_count', 'N/A')}")
-                
-                # Verify day-specific characteristics
-                if day == 1:
-                    # Day 1 should have low risks, 0 actions
-                    expected_actions = 0
-                    if day_data.get('actions_count', 0) == expected_actions:
-                        print(f"   ✅ Day 1: Correct low action count ({expected_actions})")
-                    else:
-                        print(f"   ❌ Day 1: Expected {expected_actions} actions, got {day_data.get('actions_count', 0)}")
-                
-                elif day == 70:
-                    # Day 70 should have high risks, multiple actions
-                    if day_data.get('actions_count', 0) >= 5:
-                        print(f"   ✅ Day 70: High action count as expected")
-                    else:
-                        print(f"   ❌ Day 70: Expected high action count, got {day_data.get('actions_count', 0)}")
-                
-                elif day == 90:
-                    # Day 90 should have high risks, multiple active actions
-                    if day_data.get('actions_count', 0) >= 5:
-                        print(f"   ✅ Day 90: High action count as expected")
-                    else:
-                        print(f"   ❌ Day 90: Expected high action count, got {day_data.get('actions_count', 0)}")
-        
-        # Test actions with impact data after setting to a high-risk day
-        print(f"\n   Testing action impact data on Day 70...")
-        self.run_test("Set Day 70 for Impact Test", "POST", "demo/set-day", 200, {"day": 70})
-        
-        success, actions_data = self.run_test("Get Actions with Impact", "GET", "actions", 200)
-        if success and actions_data:
-            actions = actions_data.get('actions', [])
-            if actions:
-                action = actions[0]
-                impact = action.get('impact', {})
-                print(f"   Action ID: {action.get('id', 'N/A')}")
-                print(f"   Urgency: {impact.get('urgency', 'N/A')}")
-                print(f"   Risk reduction 7d: {impact.get('risk_reduction', {}).get('7_day', 'N/A')}%")
-                print(f"   Risk reduction 14d: {impact.get('risk_reduction', {}).get('14_day', 'N/A')}%")
-                print(f"   Risk reduction 30d: {impact.get('risk_reduction', {}).get('30_day', 'N/A')}%")
-                print(f"   Productivity impact: {impact.get('productivity_impact', 'N/A')[:50]}...")
-                print(f"   Run length impact: {impact.get('run_length_impact', 'N/A')[:50]}...")
-                
-                # Verify impact data structure
-                if impact.get('risk_reduction') and impact.get('urgency'):
-                    print(f"   ✅ Action impact data structure correct")
-                else:
-                    print(f"   ❌ Action impact data missing or incomplete")
-            else:
-                print(f"   ⚠️  No actions found for impact testing")
 
-    def test_demo_controls(self):
-        """Test demo control endpoints"""
-        print("\n=== Testing Demo Controls ===")
+    def test_intervention_window_endpoint(self):
+        """Test intervention window endpoint"""
+        print("\n=== Testing Intervention Window Endpoint ===")
         
-        # Advance time
-        success, advance_data = self.run_test("Demo Advance Time", "POST", "demo/advance-time", 200)
-        if success and advance_data:
-            print(f"   New day: {advance_data.get('new_day', 'N/A')}")
+        # Test intervention windows for different days
+        test_days = [30, 70, 90]
+        for day in test_days:
+            success, window_data = self.run_test(f"Intervention Window Day {day}", "GET", f"intervention-window/{day}", 200)
+            if success and window_data:
+                print(f"   Day {day} - Current day: {window_data.get('current_day', 'N/A')}")
+                print(f"   Day {day} - Window start: {window_data.get('window_start', 'N/A')}")
+                print(f"   Day {day} - Window end: {window_data.get('window_end', 'N/A')}")
+                print(f"   Day {day} - Urgency: {window_data.get('urgency', 'N/A')}")
+
+    def test_action_status_endpoint(self):
+        """Test action status update endpoint"""
+        print("\n=== Testing Action Status Endpoint ===")
         
-        # Inject events
-        event_types = ["cw_spike", "inhibitor_interruption", "dimer_rise", "dp_increase"]
-        for event_type in event_types:
-            self.run_test(
-                f"Inject {event_type}", 
-                "POST", 
-                "demo/inject-event",
-                200,
-                {"event_type": event_type, "duration_steps": 2}
-            )
-        
-        # Resolve action
-        self.run_test("Demo Resolve Action", "POST", "demo/resolve-action", 200)
-        
-        # Pause/Resume
-        self.run_test("Demo Pause", "POST", "demo/pause", 200)
-        self.run_test("Demo Resume", "POST", "demo/resume", 200)
-        
-        # Reset (test last to avoid disrupting other tests)
-        self.run_test("Demo Reset", "POST", "demo/reset", 200)
+        # Get a day with actions first
+        success, day_data = self.run_test("Get Day 70 for Actions", "GET", "day/70", 200)
+        if success and day_data:
+            actions = day_data.get('actions', [])
+            if actions:
+                action_id = actions[0].get('id')
+                print(f"   Testing with action ID: {action_id}")
+                
+                # Test status updates
+                status_updates = [
+                    {"status": "Acknowledged", "note": "Test acknowledgment"},
+                    {"status": "Done", "note": "Test completion", "reason_code": "COMPLETED"}
+                ]
+                
+                for update in status_updates:
+                    success, result = self.run_test(
+                        f"Update Action Status to {update['status']}", 
+                        "POST", 
+                        f"actions/{action_id}/status",
+                        200,
+                        update
+                    )
+                    if success and result:
+                        print(f"   Status updated to: {result.get('new_status', 'N/A')}")
+                        print(f"   Updated at: {result.get('updated_at', 'N/A')}")
+            else:
+                print(f"   ⚠️  No actions found on Day 70 for testing")
 
     def test_error_cases(self):
         """Test error handling"""
         print("\n=== Testing Error Cases ===")
         
-        # Non-existent action
-        self.run_test("Non-existent Action", "POST", "actions/INVALID-ID/status", 404, {"status": "Done"})
+        # Invalid day (out of range)
+        self.run_test("Invalid Day (0)", "GET", "day/0", 200)  # Should clamp to day 1
+        self.run_test("Invalid Day (200)", "GET", "day/200", 200)  # Should clamp to day 111
         
-        # Invalid endpoint
-        self.run_test("Invalid Endpoint", "GET", "invalid-endpoint", 404)
+        # Non-existent action
+        self.run_test("Non-existent Action", "POST", "actions/INVALID-ID/status", 200, {"status": "Done"})
+        
+        # Invalid simulation data
+        self.run_test("Invalid Simulation", "POST", "simulate", 422, {"invalid": "data"})
 
 def main():
-    print("🚀 Starting KR AA Run Health OS API Tests")
-    print("=" * 50)
+    print("🚀 Starting KR AA Run Health Prototype API Tests")
+    print("=" * 60)
     
     tester = KRAARunHealthAPITester()
     
     # Run all test suites
     tester.test_basic_endpoints()
-    tester.test_day_scenario_selector()  # NEW: Test day scenario selector feature
-    tester.test_metrics_and_projections()
-    tester.test_actions_workflow()
-    tester.test_timeline_and_comparison()
-    tester.test_data_freshness()
-    tester.test_demo_controls()
+    tester.test_day_data_endpoints()
+    tester.test_time_series_endpoints()
+    tester.test_events_endpoint()
+    tester.test_simulation_endpoint()
+    tester.test_quick_days_endpoint()
+    tester.test_intervention_window_endpoint()
+    tester.test_action_status_endpoint()
     tester.test_error_cases()
     
     # Print summary
-    print("\n" + "=" * 50)
+    print("\n" + "=" * 60)
     print(f"📊 Test Summary:")
     print(f"   Tests run: {tester.tests_run}")
     print(f"   Tests passed: {tester.tests_passed}")
