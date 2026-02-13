@@ -1,105 +1,111 @@
 # KR AA Run Health OS - Product Requirements Document
 
-## Version 2.1 - V1/V2 Merge (Feb 2026)
+## Version 2.2 - Decision Instrument (Feb 2026)
 
 ## Original Problem Statement
 Build a conviction prototype for BPCL Kochi Refinery Acrylic Acid unit that makes the ED + operators feel: "We desperately need this to achieve long AND predictable runs (>= golden run) and to plan output + shutdowns."
 
-## V2.1 Merge Requirements
-Create V2.1 by merging the best of V1 (action-oriented) and V2 (simulation-oriented):
-1. **Restore "Today's Moves"** - V1's specific, actionable recommendations with persistent statuses
-2. **Simplify navigation** - Reduce to 2 items: Mission Control and Simulator
-3. **Embed Evidence** - Convert Evidence page to drawer/modal accessible from Mission Control
-4. **Light theme** - Clean, readable light theme throughout
-5. **Keep V2 Simulator** - Retain the What-If simulator with 4 operating levers
-6. **Persist action statuses** - Acknowledge, Done, Not Feasible statuses stored in MongoDB
+## PRIMARY GOAL: Decision Instrument
+Transform from a status dashboard into a **DECISION INSTRUMENT** that answers 3 critical questions:
+1. **Are we going to BEAT the golden run (111 days)?**
+2. **What output can we COMMIT to customers, with confidence bands?**
+3. **What EXACT actions must happen today/this week — and do they change the forecast?**
 
-## User Personas
-- **Executive Director (ED)**: Needs high-level visibility into run health, predictability, and planning
-- **Plant Operators**: Need specific, actionable guidance with asset tags and checklists
-- **Process Engineers**: Need evidence and data to support decisions
+## Key Features Implemented (V2.2)
 
-## Architecture
+### A) Default Landing = Critical Moment (Day 70)
+- Landing day changed from Day 1 to **Day 70** (rescue window)
+- Quick jump buttons: **7, 30, 52, 70, 96, 110** (critical moments)
+- Each button labeled with phase and moment description
 
-### Data Files (Static)
-- `/data/sim/run_seed.json` - Anchor points for 6 key days (1, 7, 18, 30, 70, 110)
-- `/data/sim/ops_events.json` - Operational events, shift logs, lab results, pipeline status
+### B) Golden Gap Tile
+- **Golden Target**: 111 days
+- **Forecast P50/P90**: Predicted end dates
+- **Gap to Golden**: Days ahead/behind target (+4 to +18 depending on scenario)
+- Visual status: "On track to beat Golden" (green) / "Behind Golden target" (red)
 
-### Simulation Engine
-- Piecewise linear interpolation between anchor points
-- Deterministic jitter (seed=42, max 2.5%)
-- Event overrides/spikes from ops_events.json
-- Correlation rules: polymer↑ → filter changes↑ → output↓
+### C) Commitment View (for ED)
+- **P90 Committed Output**: Conservative estimate (33,820 tons)
+- **P50 Expected Output**: Base case (35,800 tons)
+- **P10 Upside Output**: Optimistic estimate (37,032 tons)
+- **Shutdown Window (P90)**: Date range for planning
 
-### Database
-- **MongoDB**: Action status persistence (action_statuses collection)
+### D) Scenario Toggle
+Side-by-side comparison: **"If we do nothing"** vs **"If we execute Today's Moves"**
+- Switching scenarios updates:
+  - Golden Gap (+4 → +18 days)
+  - Days Remaining (45 → 59 days)
+  - Run Health Score (75 → 84)
+  - All P10/P50/P90 output projections
+  - Shutdown Window
+- "SIMULATED" badges appear when Execute Moves selected
+
+### E) Today's Moves - Urgent Actions
+Each action card includes:
+- **Urgency Level**: CRITICAL, HIGH, MEDIUM, ROUTINE
+- **Protects**: Run Length / Productivity / Both
+- **Trigger Section**:
+  - Metric name
+  - Current value
+  - Baseline value
+  - Normal band
+  - Deviation percentage (e.g., +448%)
+  - Time window (Last 24h/48h/72h/7d)
+- **Assets**: Equipment tags (G8, G9, V-014, V-022, etc.)
+- **Why**: Explanation with numbers + timeframe
+- **Action Checklist**: Numbered specific steps
+- **Expected Effect**: 
+  - Run Length impact (e.g., "+4 to +8 days (simulated)")
+  - Polymer/Risk slope impact
+  - Confidence level
+- **Impact Preview**: Shows delta when action marked Done
+
+### F) Actions Change Outcomes
+When a user marks an action **Done**:
+- **Immediately reflects** in:
+  - Predicted run end window (shifts later)
+  - Confidence interval (tightens)
+  - Polymer burden slope (flattens)
+  - Health score (improves)
+- **Impact bar** shows: "+6 days, +3 health"
+
+### G) Chart Texture (Eventful)
+Output trajectory chart includes:
+- **Dual axis**: Output (TPD) + Polymer (kg/day)
+- **Event markers**: Reference lines for operational events
+- **Event legend**: Recent events with severity badges
+
+### H) Simulator with Meaningful Deltas
+4 Operating Levers:
+1. **Cleaning Cadence**: Baseline / +1 / +2 cycles/week
+2. **Inhibitor Dose Index**: 0.9 - 1.3
+3. **Flush Frequency**: Baseline / +1 per day
+4. **Intervention Discipline**: Low / Medium / High
+
+Results show clear Before → After with delta badges.
 
 ## Navigation (2 Items Only)
 1. **Mission Control** - The cockpit (default) with embedded Evidence drawer
 2. **Simulator** - What-if scenarios
 
-## Key Features Implemented
-
-### Mission Control (Cockpit)
-- Global status strip (Feed: Healthy/Delayed/Interrupted)
-- Day slider (1-111) + quick jump buttons (Day 1, 7, 18, 30, 70, 110)
-- Evidence button to open drawer
-- 4 Hero KPI tiles:
-  - Run Health Score (0-100 gauge with Healthy/Watch/At Risk states)
-  - Predicted Run End (date + CI)
-  - Predictability (Low/Med/High + visual bands)
-  - Output Today (TPD + cumulative + expected total)
-- Golden Progress Bar with projection overlay
-- Run Plan: Output trajectory chart with intervention window
-- Top 5 Drivers with sparklines and severity indicators
-- Fouling & Polymer Build metrics with mini chart
-- What Changed mini timeline (last 7 days)
-- Today's Moves (sticky right rail):
-  - 3-5 action cards with expand/collapse
-  - Metrics: Current value, Baseline, Assets
-  - Why explanation and Action Checklist
-  - Expected effect indicator
-  - **Action buttons: Acknowledge, Done, Not Feasible**
-  - **Reason code dialog for Not Feasible** (6 options)
-  - **Status persistence across sessions**
-
-### Evidence Drawer
-- Filter chips: All Events, Polymer/Filters, Temperature, Fouling Risk, Rescue Mode, Prediction Shifts
-- Event cards with severity badges (HIGH/MEDIUM/LOW)
-- Asset tags and operator notes
-- Recent shift logs with flags (WATCH, HIGH_RISK)
-- Data pipeline status (OK/LATE/BROKEN)
-
-### Simulator
-- 4 Operating Levers:
-  - Cleaning cadence (baseline/+1/+2 cycles/wk)
-  - Inhibitor dose index (0.9-1.3)
-  - Flush frequency (baseline/+1/day)
-  - Intervention discipline (low/med/high)
-- Before vs After comparison with delta indicators
-- Simulated end date and total output projections
-- Key insight message
-
-## Testing Results (V2.1)
-- Backend: 100% (27/27 tests passed)
-- Frontend: 100%
-- All day scenarios tested (1, 7, 18, 30, 70, 110)
-- Action status persistence verified
-- Evidence drawer verified
-- Light theme verified
-
 ## API Endpoints
 - `GET /api/` - Health check
 - `GET /api/run-info` - Golden run metadata
-- `GET /api/day/{day}` - Day metrics with drivers and actions
-- `GET /api/time-series?start=&end=` - Time series data
+- `GET /api/day/{day}` - Day metrics with P10/P50/P90, golden gap
+- `GET /api/time-series` - Historical data
 - `GET /api/what-changed/{day}` - Last 7 days changes
-- `GET /api/events` - Events, shift logs, lab results, pipeline status
-- `GET /api/quick-days` - Quick jump options
+- `GET /api/events` - Events, shift logs, pipeline status
+- `GET /api/quick-days` - Jump to moments (7, 30, 52, 70, 96, 110)
+- `GET /api/scenario-comparison/{day}` - Do Nothing vs Execute Moves
+- `POST /api/apply-action-impact/{day}` - Calculate metrics after actions
 - `POST /api/simulate` - What-if simulation
 - `GET /api/actions/statuses` - All action statuses
-- `GET /api/actions/{action_id}/status` - Single action status
 - `POST /api/actions/{action_id}/status` - Update action status
+
+## Testing Results (V2.2)
+- Backend: 100% (37/37 tests passed)
+- Frontend: 100% (14/14 tests passed)
+- All Decision Instrument features verified
 
 ## Files Reference
 - Backend: `/app/backend/server.py`
@@ -107,25 +113,26 @@ Create V2.1 by merging the best of V1 (action-oriented) and V2 (simulation-orien
 - Frontend: `/app/frontend/src/App.js`, `/app/frontend/src/pages/MissionControl.js`, `Simulator.js`
 - Styles: `/app/frontend/src/App.css`
 
-## Completed in V2.1
-- [x] Merged V1 and V2 branches
-- [x] Restored "Today's Moves" with action statuses
-- [x] Simplified navigation to 2 items
-- [x] Converted Evidence page to drawer
-- [x] Applied light theme
-- [x] Action status persistence in MongoDB
-- [x] Reason code dialog for Not Feasible
-- [x] Full testing passed
+## Completed in V2.2
+- [x] Default landing Day 70 (critical moment)
+- [x] Quick jump buttons: 7, 30, 52, 70, 96, 110
+- [x] Golden Gap tile with on-track/behind status
+- [x] Commitment View with P90/P50/P10 outputs
+- [x] Scenario toggle (Do Nothing vs Execute Moves)
+- [x] Actions with Protects, Trigger, Deviation, Assets, Checklist
+- [x] Actions change outcomes immediately when marked Done
+- [x] Output chart with event markers
+- [x] Simulator with meaningful deltas
+- [x] "Prototype / Simulated" labels
 
 ## Next Action Items
-1. Add shift handover report export
-2. Add action completion impact on simulation (when action marked Done, show projected benefit)
-3. Add notification/alert system for critical events
-4. Consider role-based access (ED vs Operator views)
+1. Add shift handover report export with commitment summary
+2. Real-time data pipeline integration (replace simulation)
+3. Multi-run comparison view
+4. Mobile-responsive design
 
 ## Backlog
-- Multi-run comparison view
 - Historical run analysis
-- ML model integration for real predictions
-- Mobile-responsive design
-- Real-time data pipeline integration
+- ML model integration for predictions
+- Role-based access (ED vs Operator views)
+- Alerting system for critical events
