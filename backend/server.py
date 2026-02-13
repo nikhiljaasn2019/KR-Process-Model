@@ -900,16 +900,184 @@ async def get_action_status(action_id: str):
 
 @api_router.get("/quick-days")
 async def get_quick_days():
-    """Get quick jump day options"""
+    """Get quick jump day options - critical moments"""
     return {
         "days": [
-            {"day": 1, "label": "Day 1", "phase": "Startup"},
-            {"day": 7, "label": "Day 7", "phase": "Early"},
-            {"day": 18, "label": "Day 18", "phase": "Early-Mid"},
-            {"day": 30, "label": "Day 30", "phase": "Mid"},
-            {"day": 70, "label": "Day 70", "phase": "Late"},
-            {"day": 110, "label": "Day 110", "phase": "End"}
+            {"day": 7, "label": "Day 7", "phase": "Early", "moment": "Startup stable"},
+            {"day": 30, "label": "Day 30", "phase": "Mid", "moment": "First trends"},
+            {"day": 52, "label": "Day 52", "phase": "Mid-Late", "moment": "Polymer drift"},
+            {"day": 70, "label": "Day 70", "phase": "Critical", "moment": "Rescue window"},
+            {"day": 96, "label": "Day 96", "phase": "Late", "moment": "End game"},
+            {"day": 110, "label": "Day 110", "phase": "End", "moment": "Final stretch"}
         ]
+    }
+
+@api_router.get("/scenario-comparison/{day}")
+async def get_scenario_comparison(day: int):
+    """Get side-by-side comparison: 'Do Nothing' vs 'Execute Moves'"""
+    base_data = sim_engine.get_day_data(day)
+    actions = base_data.get("actions", [])
+    
+    # Calculate total impact if all actions are done
+    total_remaining_delta = 0
+    total_health_delta = 0
+    total_polymer_reduction = 0
+    total_ci_tightening = 0
+    
+    for action in actions:
+        impact = action.get("impact_on_done", {})
+        total_remaining_delta += impact.get("remaining_days_delta", 0)
+        total_health_delta += impact.get("health_score_delta", 0)
+        total_polymer_reduction += impact.get("polymer_reduction_pct", 0)
+        total_ci_tightening += impact.get("ci_tightening_days", 0)
+    
+    # Cap the effects at reasonable bounds
+    total_remaining_delta = min(total_remaining_delta, 15)
+    total_health_delta = min(total_health_delta, 10)
+    total_polymer_reduction = min(total_polymer_reduction, 40)
+    total_ci_tightening = min(total_ci_tightening, 4)
+    
+    remaining_base = base_data["predicted_remaining_days"]
+    health_base = base_data["run_health_score"]
+    ci_base = base_data["prediction_ci_90pct_days"]
+    
+    # "Do Nothing" scenario (current trajectory)
+    do_nothing = {
+        "predicted_remaining_days": remaining_base,
+        "forecast_end_day": base_data["forecast_end_day_p50"],
+        "predicted_end_date_p50": base_data["predicted_end_date_p50"],
+        "predicted_end_date_p90": base_data["predicted_end_date_p90"],
+        "golden_gap_days": base_data["golden_gap_days"],
+        "run_health_score": health_base,
+        "output_p50_tons": base_data["output_p50_tons"],
+        "output_p90_tons": base_data["output_p90_tons"],
+        "output_p10_tons": base_data["output_p10_tons"],
+        "shutdown_window_start": base_data["shutdown_window_start"],
+        "shutdown_window_end": base_data["shutdown_window_end"],
+        "ci_days": ci_base
+    }
+    
+    # "Execute Moves" scenario (with action impacts)
+    new_remaining = remaining_base + total_remaining_delta
+    new_health = min(100, health_base + total_health_delta)
+    new_ci = max(2, ci_base - total_ci_tightening)
+    new_polymer = base_data["polymer_burden_kg_per_day"] * (1 - total_polymer_reduction / 100)
+    
+    # Recalculate end dates
+    start_date = datetime.fromisoformat(sim_engine.golden_run["start_ts"].replace("+05:30", "+05:30"))
+    base_date = start_date + timedelta(days=day - 1)
+    new_end_date = base_date + timedelta(days=new_remaining)
+    
+    new_forecast_end_day = day + new_remaining
+    new_golden_gap = new_forecast_end_day - 111
+    
+    # Recalculate outputs
+    avg_output = base_data["eaa_output_tpd"] * 0.95
+    new_output_p50 = int(base_data["cumulative_output_tons"] + avg_output * new_remaining)
+    new_output_p90 = int(base_data["cumulative_output_tons"] + avg_output * 0.92 * (new_remaining - int(new_ci * 0.5)))
+    new_output_p10 = int(base_data["cumulative_output_tons"] + avg_output * 1.02 * (new_remaining + int(new_ci * 0.5)))
+    
+    execute_moves = {
+        "predicted_remaining_days": new_remaining,
+        "forecast_end_day": new_forecast_end_day,
+        "predicted_end_date_p50": new_end_date.strftime("%Y-%m-%d"),
+        "predicted_end_date_p90": (new_end_date - timedelta(days=int(new_ci * 0.5))).strftime("%Y-%m-%d"),
+        "golden_gap_days": new_golden_gap,
+        "run_health_score": new_health,
+        "output_p50_tons": new_output_p50,
+        "output_p90_tons": new_output_p90,
+        "output_p10_tons": new_output_p10,
+        "shutdown_window_start": (new_end_date - timedelta(days=int(new_ci * 0.7))).strftime("%Y-%m-%d"),
+        "shutdown_window_end": (new_end_date + timedelta(days=int(new_ci * 0.3))).strftime("%Y-%m-%d"),
+        "ci_days": new_ci,
+        "polymer_burden_kg_per_day": int(new_polymer)
+    }
+    
+    # Deltas
+    deltas = {
+        "remaining_days": total_remaining_delta,
+        "health_score": total_health_delta,
+        "golden_gap": new_golden_gap - base_data["golden_gap_days"],
+        "output_p50": new_output_p50 - base_data["output_p50_tons"],
+        "ci_days": -total_ci_tightening
+    }
+    
+    return {
+        "day": day,
+        "do_nothing": do_nothing,
+        "execute_moves": execute_moves,
+        "deltas": deltas,
+        "actions_count": len(actions)
+    }
+
+@api_router.post("/apply-action-impact/{day}")
+async def apply_action_impact(day: int, action_ids: List[str] = []):
+    """Calculate metrics after applying completed actions"""
+    base_data = sim_engine.get_day_data(day).copy()
+    
+    # Get completed action statuses from DB
+    completed_statuses = await db.action_statuses.find(
+        {"status": "Done"},
+        {"_id": 0}
+    ).to_list(100)
+    
+    completed_ids = set(s["action_id"] for s in completed_statuses)
+    completed_ids.update(action_ids)  # Include any passed in directly
+    
+    # Get today's actions
+    actions = base_data.get("actions", [])
+    
+    # Calculate cumulative impact
+    total_remaining_delta = 0
+    total_health_delta = 0
+    total_polymer_reduction = 0
+    total_ci_tightening = 0
+    
+    for action in actions:
+        if action["id"] in completed_ids:
+            impact = action.get("impact_on_done", {})
+            total_remaining_delta += impact.get("remaining_days_delta", 0)
+            total_health_delta += impact.get("health_score_delta", 0)
+            total_polymer_reduction += impact.get("polymer_reduction_pct", 0)
+            total_ci_tightening += impact.get("ci_tightening_days", 0)
+    
+    # Apply impacts
+    adjusted = base_data.copy()
+    adjusted["predicted_remaining_days"] = base_data["predicted_remaining_days"] + min(total_remaining_delta, 15)
+    adjusted["run_health_score"] = min(100, base_data["run_health_score"] + min(total_health_delta, 10))
+    adjusted["polymer_burden_kg_per_day"] = base_data["polymer_burden_kg_per_day"] * (1 - min(total_polymer_reduction, 40) / 100)
+    adjusted["prediction_ci_90pct_days"] = max(2, base_data["prediction_ci_90pct_days"] - min(total_ci_tightening, 4))
+    
+    # Recalculate derived metrics
+    remaining = adjusted["predicted_remaining_days"]
+    ci = adjusted["prediction_ci_90pct_days"]
+    start_date = datetime.fromisoformat(sim_engine.golden_run["start_ts"].replace("+05:30", "+05:30"))
+    base_date = start_date + timedelta(days=day - 1)
+    predicted_end = base_date + timedelta(days=remaining)
+    
+    adjusted["predicted_end_date"] = predicted_end.strftime("%Y-%m-%d")
+    adjusted["predicted_end_date_p50"] = predicted_end.strftime("%Y-%m-%d")
+    adjusted["predicted_end_date_p90"] = (predicted_end - timedelta(days=int(ci * 0.5))).strftime("%Y-%m-%d")
+    adjusted["forecast_end_day_p50"] = day + remaining
+    adjusted["golden_gap_days"] = (day + remaining) - 111
+    
+    # Recalculate outputs
+    avg_output = adjusted["eaa_output_tpd"] * 0.95
+    adjusted["output_p50_tons"] = int(base_data["cumulative_output_tons"] + avg_output * remaining)
+    adjusted["output_p90_tons"] = int(base_data["cumulative_output_tons"] + avg_output * 0.92 * (remaining - int(ci * 0.5)))
+    adjusted["output_p10_tons"] = int(base_data["cumulative_output_tons"] + avg_output * 1.02 * (remaining + int(ci * 0.5)))
+    
+    return {
+        "day": day,
+        "baseline": base_data,
+        "adjusted": adjusted,
+        "completed_actions": list(completed_ids),
+        "impact_applied": {
+            "remaining_days_delta": min(total_remaining_delta, 15),
+            "health_delta": min(total_health_delta, 10),
+            "polymer_reduction_pct": min(total_polymer_reduction, 40),
+            "ci_tightening_days": min(total_ci_tightening, 4)
+        }
     }
 
 @api_router.get("/intervention-window/{day}")
