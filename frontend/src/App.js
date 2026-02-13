@@ -1,213 +1,183 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, createContext, useContext } from "react";
 import "@/App.css";
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from "react-router-dom";
 import axios from "axios";
 import { Toaster, toast } from "sonner";
 import { 
   Activity, 
-  AlertTriangle, 
-  CheckCircle, 
-  Clock, 
-  Settings, 
-  Target, 
-  TrendingUp, 
-  Shield,
-  ChevronRight,
-  Play,
-  Pause,
-  RotateCcw,
-  Zap,
-  Droplet,
-  ThermometerSun,
-  Gauge,
-  ListChecks,
-  FileText,
-  Database,
-  X,
-  Check,
-  ArrowRight,
-  RefreshCw
+  Gauge, 
+  FlaskConical,
+  Radio,
+  Info
 } from "lucide-react";
 
 // Pages
 import MissionControl from "./pages/MissionControl";
-import ActionCenter from "./pages/ActionCenter";
-import WhatChanged from "./pages/WhatChanged";
-import GoldenComparator from "./pages/GoldenComparator";
-import DataFreshness from "./pages/DataFreshness";
-
-// Components
-import DemoControlPanel from "./components/DemoControlPanel";
+import Simulator from "./pages/Simulator";
+import Evidence from "./pages/Evidence";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BACKEND_URL}/api`;
 
-// Create axios instance
 export const api = axios.create({
   baseURL: API,
   timeout: 10000,
 });
 
-// App Context for shared state
-export const AppContext = React.createContext(null);
-
-import React from "react";
+// App Context
+export const AppContext = createContext(null);
 
 function App() {
-  const [projections, setProjections] = useState(null);
-  const [metrics, setMetrics] = useState(null);
-  const [actions, setActions] = useState(null);
-  const [freshness, setFreshness] = useState(null);
+  const [currentDay, setCurrentDay] = useState(30);
+  const [dayData, setDayData] = useState(null);
+  const [runInfo, setRunInfo] = useState(null);
+  const [timeSeries, setTimeSeries] = useState([]);
+  const [whatChanged, setWhatChanged] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showDemoPanel, setShowDemoPanel] = useState(false);
+  const [quickDays, setQuickDays] = useState([]);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (day) => {
     try {
-      const [projectionsRes, metricsRes, actionsRes, freshnessRes] = await Promise.all([
-        api.get("/projections"),
-        api.get("/metrics"),
-        api.get("/actions"),
-        api.get("/data-freshness"),
+      const [dayRes, runRes, seriesRes, changedRes, quickRes] = await Promise.all([
+        api.get(`/day/${day}`),
+        api.get("/run-info"),
+        api.get(`/time-series?start=1&end=${day}`),
+        api.get(`/what-changed/${day}`),
+        api.get("/quick-days")
       ]);
-      setProjections(projectionsRes.data);
-      setMetrics(metricsRes.data);
-      setActions(actionsRes.data);
-      setFreshness(freshnessRes.data);
+      
+      setDayData(dayRes.data);
+      setRunInfo(runRes.data);
+      setTimeSeries(seriesRes.data.series);
+      setWhatChanged(changedRes.data.changes);
+      setQuickDays(quickRes.data.days);
     } catch (error) {
       console.error("Error fetching data:", error);
-      toast.error("Failed to fetch data");
+      toast.error("Failed to load data");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    fetchData(currentDay);
+  }, [currentDay, fetchData]);
 
-  const handleDemoAction = async (action, params = {}) => {
-    try {
-      let response;
-      switch (action) {
-        case "advance":
-          response = await api.post("/demo/advance-time");
-          toast.success(`Advanced 6 hours • Day ${response.data.new_day}`);
-          break;
-        case "inject":
-          response = await api.post("/demo/inject-event", { event_type: params.eventType });
-          toast.success(`Injected: ${params.eventType.replace("_", " ")}`);
-          break;
-        case "resolve":
-          response = await api.post("/demo/resolve-action");
-          toast.success(response.data.message);
-          break;
-        case "pause":
-          response = await api.post("/demo/pause");
-          toast.info("Data feed paused");
-          break;
-        case "resume":
-          response = await api.post("/demo/resume");
-          toast.success("Data feed resumed");
-          break;
-        case "reset":
-          response = await api.post("/demo/reset");
-          toast.success("Simulation reset to Day 1");
-          break;
-        default:
-          break;
-      }
-      fetchData();
-    } catch (error) {
-      console.error("Demo action error:", error);
-      toast.error("Action failed");
-    }
+  const handleDayChange = (day) => {
+    setLoading(true);
+    setCurrentDay(day);
   };
 
   const contextValue = {
-    projections,
-    metrics,
-    actions,
-    freshness,
+    currentDay,
+    dayData,
+    runInfo,
+    timeSeries,
+    whatChanged,
+    quickDays,
     loading,
-    fetchData,
-    handleDemoAction,
+    handleDayChange,
+    fetchData
   };
 
   return (
     <AppContext.Provider value={contextValue}>
-      <div className="app-container">
-        <BrowserRouter>
-          <Header freshness={freshness} />
-          <main className="main-content">
+      <BrowserRouter>
+        <div className="app-layout">
+          <LeftNav />
+          <div className="main-content">
+            <StatusStrip dayData={dayData} />
             <Routes>
               <Route path="/" element={<MissionControl />} />
-              <Route path="/actions" element={<ActionCenter />} />
-              <Route path="/timeline" element={<WhatChanged />} />
-              <Route path="/compare" element={<GoldenComparator />} />
-              <Route path="/data" element={<DataFreshness />} />
+              <Route path="/simulator" element={<Simulator />} />
+              <Route path="/evidence" element={<Evidence />} />
             </Routes>
-          </main>
-          <DemoControlPanel 
-            show={showDemoPanel} 
-            onToggle={() => setShowDemoPanel(!showDemoPanel)}
-            onAction={handleDemoAction}
-            isPaused={freshness?.is_paused}
-          />
-        </BrowserRouter>
-        <Toaster position="top-right" richColors closeButton />
-      </div>
+          </div>
+        </div>
+      </BrowserRouter>
+      <Toaster position="top-right" theme="dark" richColors closeButton />
     </AppContext.Provider>
   );
 }
 
-function Header({ freshness }) {
+function LeftNav() {
   const location = useLocation();
   
   const navItems = [
-    { path: "/", label: "Mission Control", icon: Target },
-    { path: "/actions", label: "Action Center", icon: ListChecks },
-    { path: "/timeline", label: "What Changed", icon: Clock },
-    { path: "/compare", label: "Golden Comparator", icon: TrendingUp },
-    { path: "/data", label: "Data Feed", icon: Database },
+    { path: "/", label: "Mission Control", icon: Gauge },
+    { path: "/simulator", label: "Simulator", icon: FlaskConical },
+    { path: "/evidence", label: "Evidence", icon: Radio },
   ];
 
   return (
-    <header className="app-header">
-      <div className="header-content">
-        <div className="logo-section">
-          <div className="logo-icon">
-            <Activity size={20} />
-          </div>
-          <div>
-            <div className="logo-text">KR AA Run Health</div>
-            <div className="logo-subtitle">Kochi Refinery • Acrylic Acid Unit</div>
-          </div>
+    <nav className="left-nav">
+      <div className="nav-logo">
+        <div className="nav-logo-icon">
+          <Activity size={18} color="white" />
         </div>
-        
-        <nav className="nav-tabs">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              className={({ isActive }) => `nav-tab ${isActive ? "active" : ""}`}
-              data-testid={`nav-${item.path === "/" ? "home" : item.path.slice(1)}`}
-            >
-              <item.icon size={16} />
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
-        </nav>
-
-        <div className="header-actions">
-          <div className="freshness-indicator" data-testid="freshness-indicator">
-            <span className={`freshness-dot ${freshness?.is_paused ? "paused" : ""}`}></span>
-            <span>
-              {freshness?.is_paused ? "Paused" : "Live"} • Day {freshness?.run_day || "—"}
-            </span>
+        <div>
+          <div className="nav-logo-text">KR AA Run Health</div>
+          <div className="nav-logo-sub">Kochi Refinery</div>
+        </div>
+      </div>
+      
+      <div className="nav-items">
+        {navItems.map((item) => (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
+            data-testid={`nav-${item.path === "/" ? "mission" : item.path.slice(1)}`}
+          >
+            <item.icon size={18} />
+            <span>{item.label}</span>
+          </NavLink>
+        ))}
+      </div>
+      
+      <div className="nav-footer">
+        <div className="tooltip prototype-badge">
+          <Info size={12} />
+          <span>Prototype</span>
+          <div className="tooltip-content">
+            Illustrative simulation for UX; not plant-validated logic.
           </div>
         </div>
       </div>
-    </header>
+    </nav>
+  );
+}
+
+function StatusStrip({ dayData }) {
+  if (!dayData) return null;
+  
+  const feedStatus = dayData.feed_status || "Healthy";
+  const statusClass = feedStatus === "Healthy" ? "" : feedStatus === "Delayed" ? "delayed" : "interrupted";
+  
+  return (
+    <div className="status-strip" data-testid="status-strip">
+      <div className="status-left">
+        <div className="status-item">
+          <span className={`status-dot ${statusClass}`}></span>
+          <span className="status-label">Feed:</span>
+          <span className="status-value">{feedStatus}</span>
+        </div>
+        <div className="status-item">
+          <span className="status-label">Updated:</span>
+          <span className="status-value">2 min ago</span>
+        </div>
+        <div className="status-item">
+          <span className="status-label">Scored:</span>
+          <span className="status-value">5 min ago</span>
+        </div>
+      </div>
+      <div className="status-right">
+        <div className="run-selector">
+          <Activity size={14} />
+          <span>KR-AA-GOLDEN-CANDIDATE</span>
+        </div>
+      </div>
+    </div>
   );
 }
 
