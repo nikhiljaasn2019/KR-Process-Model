@@ -2334,3 +2334,313 @@ body {
   font-weight: 600;
   color: var(--accent-green);
 }
+
+/* ========== SIDE-BY-SIDE SCENARIO COMPARISON ========== */
+
+.scenario-comparison {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.scenario-comparison-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.scenario-comparison-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.scenario-panels {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.scenario-panel {
+  background: var(--bg-hover);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.scenario-panel.do-nothing {
+  border: 1px solid var(--border);
+}
+
+.scenario-panel.execute-moves {
+  border: 2px solid var(--accent-green);
+  background: rgba(16, 185, 129, 0.03);
+}
+
+.scenario-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.scenario-panel.do-nothing .scenario-panel-header {
+  color: var(--text-secondary);
+}
+
+.scenario-panel.execute-moves .scenario-panel-header {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--accent-green);
+}
+
+.simulated-tag {
+  margin-left: auto;
+  padding: 0.125rem 0.375rem;
+  background: rgba(139, 92, 246, 0.15);
+  border-radius: 3px;
+  font-size: 0.5rem;
+  font-weight: 700;
+  color: var(--accent-purple);
+}
+
+.scenario-panel-content {
+  padding: 1rem;
+}
+
+.benchmark-deviation {
+  text-align: center;
+  padding: 1rem;
+  background: var(--bg-card);
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.deviation-label {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+
+.deviation-value {
+  font-size: 1.75rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.deviation-value.positive {
+  color: var(--accent-green);
+}
+
+.deviation-value.negative {
+  color: var(--accent-red);
+}
+
+.deviation-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+}
+
+.deviation-value.positive + .deviation-status {
+  color: var(--accent-green);
+}
+
+.deviation-value.negative + .deviation-status {
+  color: var(--accent-red);
+}
+
+.scenario-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.scenario-metric {
+  padding: 0.5rem;
+  background: var(--bg-card);
+  border-radius: 6px;
+}
+
+.metric-label {
+  display: block;
+  font-size: 0.5625rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.metric-value {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-top: 0.125rem;
+}
+
+.metric-value.highlight {
+  color: var(--accent-green);
+}
+
+.scenario-output {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-bottom: 0.75rem;
+}
+
+.output-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  background: var(--bg-card);
+  border-radius: 4px;
+}
+
+.output-tag {
+  padding: 0.125rem 0.375rem;
+  border-radius: 3px;
+  font-size: 0.5rem;
+  font-weight: 700;
+  color: white;
+}
+
+.output-tag.p90 {
+  background: var(--accent-yellow);
+}
+
+.output-tag.p50 {
+  background: var(--accent-blue);
+}
+
+.output-tag.p10 {
+  background: var(--accent-green);
+}
+
+.output-label {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.output-value {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.output-value.highlight {
+  color: var(--accent-green);
+}
+
+.scenario-shutdown {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem;
+  background: rgba(239, 68, 68, 0.05);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  border-radius: 6px;
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+}
+
+.scenario-delta-arrow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.5rem;
+  color: var(--accent-green);
+}
+
+.delta-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+}
+
+.delta-item {
+  padding: 0.25rem 0.5rem;
+  background: rgba(16, 185, 129, 0.1);
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.delta-item.positive {
+  color: var(--accent-green);
+}
+
+/* Benchmark progress bar updates */
+.benchmark-info {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+
+.benchmark-progress-bar {
+  position: relative;
+  height: 32px;
+  background: var(--bg-hover);
+  border-radius: 6px;
+  overflow: visible;
+  margin: 1.5rem 0;
+}
+
+.projection-overlay.do-nothing {
+  background: rgba(59, 130, 246, 0.15);
+  border-left: 2px dashed var(--accent-blue);
+  border-right: 2px dashed var(--accent-blue);
+}
+
+.projection-overlay.execute {
+  background: rgba(16, 185, 129, 0.15);
+  border-left: 2px dashed var(--accent-green);
+  border-right: 2px dashed var(--accent-green);
+}
+
+.projection-overlay.execute .projection-label {
+  color: var(--accent-green);
+}
+
+.benchmark-target-marker {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--accent-purple);
+}
+
+.benchmark-target-label {
+  position: absolute;
+  top: -20px;
+  right: 0;
+  font-size: 0.625rem;
+  color: var(--accent-purple);
+  white-space: nowrap;
+  font-weight: 600;
+}
