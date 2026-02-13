@@ -58,9 +58,7 @@ export default function MissionControl() {
     actionStatuses,
     updateActionStatus,
     events,
-    scenarioComparison,
-    scenarioMode,
-    setScenarioMode
+    scenarioComparison
   } = useContext(AppContext);
 
   const [evidenceDrawerOpen, setEvidenceDrawerOpen] = useState(false);
@@ -73,11 +71,6 @@ export default function MissionControl() {
       </div>
     );
   }
-
-  // Get scenario data based on mode
-  const activeScenario = scenarioComparison 
-    ? (scenarioMode === "execute_moves" ? scenarioComparison.execute_moves : scenarioComparison.do_nothing)
-    : null;
 
   const progressPercent = (currentDay / 111) * 100;
 
