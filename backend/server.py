@@ -169,7 +169,7 @@ class SimulationEngine:
         else:
             metrics["feed_status"] = "Interrupted"
         
-        # Predicted end date
+        # Predicted end date (P50)
         base_date = self.start_date + timedelta(days=day - 1)
         predicted_end = base_date + timedelta(days=remaining)
         metrics["predicted_end_date"] = predicted_end.strftime("%Y-%m-%d")
@@ -180,6 +180,41 @@ class SimulationEngine:
         current_date = self.start_date + timedelta(days=day - 1)
         metrics["current_date"] = current_date.strftime("%Y-%m-%d")
         metrics["current_date_display"] = current_date.strftime("%d %b %Y")
+        
+        # ========== GOLDEN GAP CALCULATIONS ==========
+        golden_target_days = 111
+        forecast_end_day = day + remaining
+        metrics["golden_gap_days"] = forecast_end_day - golden_target_days  # negative = behind golden
+        metrics["golden_target_days"] = golden_target_days
+        metrics["forecast_end_day_p50"] = forecast_end_day
+        metrics["forecast_end_day_p90"] = forecast_end_day - int(ci * 0.5)  # P90 = pessimistic
+        metrics["forecast_end_day_p10"] = forecast_end_day + int(ci * 0.5)  # P10 = optimistic
+        
+        # End dates for P10/P50/P90
+        metrics["predicted_end_date_p50"] = predicted_end.strftime("%Y-%m-%d")
+        metrics["predicted_end_date_p90"] = (predicted_end - timedelta(days=int(ci * 0.5))).strftime("%Y-%m-%d")
+        metrics["predicted_end_date_p10"] = (predicted_end + timedelta(days=int(ci * 0.5))).strftime("%Y-%m-%d")
+        
+        # ========== COMMITMENT VIEW - P10/P50/P90 OUTPUT ==========
+        # P50 expected output (base case)
+        p50_remaining_output = avg_future_output * remaining
+        metrics["output_p50_tons"] = int(metrics["cumulative_output_tons"] + p50_remaining_output)
+        
+        # P90 committed output (conservative - shorter run, lower output)
+        p90_remaining_days = remaining - int(ci * 0.5)
+        p90_output_rate = metrics["eaa_output_tpd"] * 0.92  # Lower bound of output
+        metrics["output_p90_tons"] = int(metrics["cumulative_output_tons"] + p90_output_rate * p90_remaining_days * 0.95)
+        
+        # P10 upside output (optimistic - longer run, higher output)
+        p10_remaining_days = remaining + int(ci * 0.5)
+        p10_output_rate = metrics["eaa_output_tpd"] * 1.02  # Slightly better
+        metrics["output_p10_tons"] = int(metrics["cumulative_output_tons"] + p10_output_rate * p10_remaining_days * 0.95)
+        
+        # Shutdown window (P90 - conservative)
+        shutdown_start = predicted_end - timedelta(days=int(ci * 0.7))
+        shutdown_end = predicted_end + timedelta(days=int(ci * 0.3))
+        metrics["shutdown_window_start"] = shutdown_start.strftime("%Y-%m-%d")
+        metrics["shutdown_window_end"] = shutdown_end.strftime("%Y-%m-%d")
         
         return metrics
     
