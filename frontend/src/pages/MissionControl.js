@@ -861,6 +861,9 @@ function ActionCard({ action, priority, status, reasonCode, onUpdateStatus }) {
   const [expanded, setExpanded] = useState(priority === 1 && status === "New");
   const [showReasonDialog, setShowReasonDialog] = useState(false);
   
+  // Only apply status styling if this specific action was marked (not inherited from other days)
+  const isActuallyMarked = status === "Done" || status === "Not Feasible";
+  
   const urgencyConfig = {
     "critical": { bg: "#FEE2E2", border: "#EF4444", label: "CRITICAL", color: "#EF4444" },
     "high": { bg: "#FEF3C7", border: "#F59E0B", label: "HIGH", color: "#F59E0B" },
@@ -900,8 +903,8 @@ function ActionCard({ action, priority, status, reasonCode, onUpdateStatus }) {
       className={`move-card ${action.urgency}`}
       data-testid={`move-card-${action.id}`}
       style={{ 
-        background: status !== "New" ? currentStatus.bg : urgency.bg,
-        borderColor: status !== "New" ? currentStatus.border : urgency.border
+        background: isActuallyMarked ? currentStatus.bg : urgency.bg,
+        borderColor: isActuallyMarked ? currentStatus.border : urgency.border
       }}
     >
       <div className="move-card-header" onClick={() => setExpanded(!expanded)} style={{ cursor: "pointer" }}>
@@ -912,10 +915,7 @@ function ActionCard({ action, priority, status, reasonCode, onUpdateStatus }) {
         </div>
         <div className="move-title-section">
           <div className="move-title-row">
-            <div className="move-title" style={{ 
-              textDecoration: status === "Done" || status === "Not Feasible" ? "line-through" : "none",
-              opacity: status === "Done" || status === "Not Feasible" ? 0.7 : 1
-            }}>
+            <div className="move-title">
               {action.title}
             </div>
             <span className={`urgency-badge ${action.urgency}`}>{urgency.label}</span>
@@ -923,6 +923,12 @@ function ActionCard({ action, priority, status, reasonCode, onUpdateStatus }) {
           <div className="move-protects">
             <Shield size={12} />
             Protects: {action.protects}
+            {isActuallyMarked && (
+              <span className="action-status-inline">
+                {currentStatus.icon}
+                {status}
+              </span>
+            )}
           </div>
         </div>
         {expanded ? <ChevronDown size={16} color="var(--text-muted)" /> : <ChevronRight size={16} color="var(--text-muted)" />}
