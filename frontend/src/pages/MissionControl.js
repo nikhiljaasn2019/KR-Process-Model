@@ -19,7 +19,15 @@ import {
   AlertCircle,
   Check,
   XCircle,
-  Eye
+  Eye,
+  Zap,
+  Shield,
+  TrendingDown,
+  Calendar,
+  Package,
+  ArrowRight,
+  ToggleLeft,
+  ToggleRight
 } from "lucide-react";
 import {
   LineChart,
@@ -31,7 +39,10 @@ import {
   ResponsiveContainer,
   Area,
   AreaChart,
-  ReferenceLine
+  ReferenceLine,
+  ReferenceDot,
+  ComposedChart,
+  Bar
 } from "recharts";
 
 export default function MissionControl() {
@@ -46,7 +57,10 @@ export default function MissionControl() {
     handleDayChange,
     actionStatuses,
     updateActionStatus,
-    events
+    events,
+    scenarioComparison,
+    scenarioMode,
+    setScenarioMode
   } = useContext(AppContext);
 
   const [evidenceDrawerOpen, setEvidenceDrawerOpen] = useState(false);
@@ -55,13 +69,17 @@ export default function MissionControl() {
     return (
       <div className="empty-state">
         <div className="loading-spinner"></div>
-        <p style={{ marginTop: "1rem" }}>Loading mission data...</p>
+        <p style={{ marginTop: "1rem" }}>Loading decision data...</p>
       </div>
     );
   }
 
+  // Get scenario data based on mode
+  const activeScenario = scenarioComparison 
+    ? (scenarioMode === "execute_moves" ? scenarioComparison.execute_moves : scenarioComparison.do_nothing)
+    : null;
+
   const progressPercent = (currentDay / 111) * 100;
-  const projectedEndPercent = ((currentDay + dayData.predicted_remaining_days) / 111) * 100;
 
   return (
     <div className="page-content" data-testid="mission-control">
@@ -75,28 +93,54 @@ export default function MissionControl() {
           onOpenEvidence={() => setEvidenceDrawerOpen(true)}
         />
 
-        {/* Hero KPI Tiles */}
-        <HeroSection dayData={dayData} />
+        {/* Scenario Toggle - Do Nothing vs Execute Moves */}
+        <ScenarioToggle 
+          mode={scenarioMode}
+          setMode={setScenarioMode}
+          comparison={scenarioComparison}
+        />
+
+        {/* Golden Gap + Commitment View (side by side) */}
+        <div className="decision-panels">
+          <GoldenGapTile 
+            dayData={dayData} 
+            activeScenario={activeScenario}
+            scenarioMode={scenarioMode}
+          />
+          <CommitmentView 
+            dayData={dayData} 
+            activeScenario={activeScenario}
+            scenarioMode={scenarioMode}
+          />
+        </div>
+
+        {/* Hero KPI Row */}
+        <HeroSection dayData={dayData} activeScenario={activeScenario} scenarioMode={scenarioMode} />
 
         {/* Golden Progress Bar */}
         <ProgressSection 
           currentDay={currentDay}
           dayData={dayData}
-          progressPercent={progressPercent}
-          projectedEndPercent={projectedEndPercent}
+          activeScenario={activeScenario}
+          scenarioMode={scenarioMode}
         />
 
-        {/* Run Plan - Output Trajectory */}
-        <RunPlanSection timeSeries={timeSeries} currentDay={currentDay} dayData={dayData} />
+        {/* Run Plan - Output Trajectory with Events */}
+        <RunPlanSection 
+          timeSeries={timeSeries} 
+          currentDay={currentDay} 
+          dayData={dayData}
+          events={events}
+        />
 
         {/* Two Column Layout: Drivers + Fouling */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
           <DriversSection drivers={dayData.drivers || []} />
-          <FoulingSection dayData={dayData} timeSeries={timeSeries} />
+          <FoulingSection dayData={dayData} timeSeries={timeSeries} events={events} />
         </div>
 
         {/* What Changed Timeline */}
-        <WhatChangedSection changes={whatChanged} />
+        <WhatChangedSection changes={whatChanged} events={events} />
       </div>
 
       {/* Right Rail - Today's Moves */}
@@ -140,14 +184,16 @@ function DayControls({ currentDay, dayData, quickDays, onDayChange, onOpenEviden
       </div>
       
       <div className="quick-days">
+        <span style={{ fontSize: "0.625rem", color: "var(--text-muted)", marginRight: "0.5rem" }}>Jump to:</span>
         {quickDays.map((item) => (
           <button
             key={item.day}
             className={`quick-day-btn ${currentDay === item.day ? "active" : ""}`}
             onClick={() => onDayChange(item.day)}
             data-testid={`quick-day-${item.day}`}
+            title={item.moment}
           >
-            {item.label}
+            {item.day}
           </button>
         ))}
       </div>
@@ -157,19 +203,182 @@ function DayControls({ currentDay, dayData, quickDays, onDayChange, onOpenEviden
         onClick={onOpenEvidence}
         data-testid="open-evidence-btn"
       >
-        <Radio size={16} />
+        <Radio size={14} />
         Evidence
       </button>
     </div>
   );
 }
 
-function HeroSection({ dayData }) {
-  const healthColor = dayData.run_health_score >= 80 ? "#10B981" : 
-                      dayData.run_health_score >= 60 ? "#F59E0B" : "#EF4444";
+function ScenarioToggle({ mode, setMode, comparison }) {
+  if (!comparison) return null;
+
+  const delta = comparison.deltas;
+
+  return (
+    <div className="scenario-toggle-bar" data-testid="scenario-toggle">
+      <div className="scenario-toggle-label">
+        <Zap size={14} />
+        <span>Scenario View</span>
+      </div>
+      
+      <div className="scenario-toggle-options">
+        <button 
+          className={`scenario-btn ${mode === "do_nothing" ? "active" : ""}`}
+          onClick={() => setMode("do_nothing")}
+        >
+          <TrendingDown size={14} />
+          If we do nothing
+        </button>
+        <button 
+          className={`scenario-btn ${mode === "execute_moves" ? "active green" : ""}`}
+          onClick={() => setMode("execute_moves")}
+        >
+          <CheckCircle size={14} />
+          If we execute Today's Moves
+          {delta && delta.remaining_days > 0 && (
+            <span className="scenario-delta">+{delta.remaining_days}d</span>
+          )}
+        </button>
+      </div>
+
+      <div className="prototype-label">
+        <AlertCircle size={10} />
+        Prototype / Simulated
+      </div>
+    </div>
+  );
+}
+
+function GoldenGapTile({ dayData, activeScenario, scenarioMode }) {
+  const goldenTarget = 111;
+  const forecastEndDay = activeScenario?.forecast_end_day || dayData.forecast_end_day_p50;
+  const gap = forecastEndDay - goldenTarget;
+  const isOnTrack = gap >= 0;
+
+  return (
+    <div className={`decision-tile golden-gap ${isOnTrack ? "on-track" : "behind"}`} data-testid="golden-gap">
+      <div className="decision-tile-header">
+        <div className="decision-tile-icon">
+          <Target size={18} />
+        </div>
+        <span className="decision-tile-title">Golden Gap</span>
+        {scenarioMode === "execute_moves" && (
+          <span className="simulated-badge">Simulated</span>
+        )}
+      </div>
+      
+      <div className="golden-gap-content">
+        <div className="golden-gap-main">
+          <div className={`golden-gap-value ${isOnTrack ? "positive" : "negative"}`}>
+            {gap >= 0 ? "+" : ""}{gap}
+          </div>
+          <div className="golden-gap-unit">days vs Golden</div>
+        </div>
+        
+        <div className="golden-gap-details">
+          <div className="detail-row">
+            <span className="detail-label">Golden Target</span>
+            <span className="detail-value">{goldenTarget} days</span>
+          </div>
+          <div className="detail-row">
+            <span className="detail-label">Forecast (P50)</span>
+            <span className="detail-value">{activeScenario?.predicted_end_date_p50 || dayData.predicted_end_date_p50}</span>
+          </div>
+          <div className="detail-row">
+            <span className="detail-label">Forecast (P90)</span>
+            <span className="detail-value">{activeScenario?.predicted_end_date_p90 || dayData.predicted_end_date_p90}</span>
+          </div>
+        </div>
+      </div>
+      
+      <div className={`golden-gap-status ${isOnTrack ? "on-track" : "behind"}`}>
+        {isOnTrack ? (
+          <>
+            <CheckCircle size={14} />
+            <span>On track to beat Golden</span>
+          </>
+        ) : (
+          <>
+            <AlertTriangle size={14} />
+            <span>{Math.abs(gap)} days behind Golden target</span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CommitmentView({ dayData, activeScenario, scenarioMode }) {
+  const p90 = activeScenario?.output_p90_tons || dayData.output_p90_tons;
+  const p50 = activeScenario?.output_p50_tons || dayData.output_p50_tons;
+  const p10 = activeScenario?.output_p10_tons || dayData.output_p10_tons;
+  const shutdownStart = activeScenario?.shutdown_window_start || dayData.shutdown_window_start;
+  const shutdownEnd = activeScenario?.shutdown_window_end || dayData.shutdown_window_end;
+
+  return (
+    <div className="decision-tile commitment-view" data-testid="commitment-view">
+      <div className="decision-tile-header">
+        <div className="decision-tile-icon">
+          <Package size={18} />
+        </div>
+        <span className="decision-tile-title">Commitment View (for ED)</span>
+        {scenarioMode === "execute_moves" && (
+          <span className="simulated-badge">Simulated</span>
+        )}
+      </div>
+      
+      <div className="commitment-content">
+        <div className="commitment-row committed">
+          <div className="commitment-label">
+            <span className="commitment-tag">P90</span>
+            Committed Output
+          </div>
+          <div className="commitment-value">
+            {p90.toLocaleString()} <span className="unit">tons</span>
+          </div>
+        </div>
+        
+        <div className="commitment-row expected">
+          <div className="commitment-label">
+            <span className="commitment-tag blue">P50</span>
+            Expected Output
+          </div>
+          <div className="commitment-value">
+            {p50.toLocaleString()} <span className="unit">tons</span>
+          </div>
+        </div>
+        
+        <div className="commitment-row upside">
+          <div className="commitment-label">
+            <span className="commitment-tag green">P10</span>
+            Upside Output
+          </div>
+          <div className="commitment-value">
+            {p10.toLocaleString()} <span className="unit">tons</span>
+          </div>
+        </div>
+        
+        <div className="commitment-shutdown">
+          <div className="shutdown-label">
+            <Calendar size={14} />
+            Shutdown Window (P90)
+          </div>
+          <div className="shutdown-dates">
+            {shutdownStart} → {shutdownEnd}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HeroSection({ dayData, activeScenario, scenarioMode }) {
+  const healthScore = activeScenario?.run_health_score || dayData.run_health_score;
+  const healthColor = healthScore >= 80 ? "#10B981" : healthScore >= 60 ? "#F59E0B" : "#EF4444";
   
   const circumference = 2 * Math.PI * 35;
-  const offset = circumference - (dayData.run_health_score / 100) * circumference;
+  const offset = circumference - (healthScore / 100) * circumference;
   
   const predictabilityBands = dayData.predictability_score === "High" ? 5 : 
                                dayData.predictability_score === "Medium" ? 3 : 1;
@@ -179,7 +388,8 @@ function HeroSection({ dayData }) {
       {/* Health Score Gauge */}
       <div className="hero-tile">
         <div className="hero-tile-header">
-          <span className="hero-tile-label">Run Health Score</span>
+          <span className="hero-tile-label">Run Health</span>
+          {scenarioMode === "execute_moves" && <span className="simulated-mini">SIM</span>}
         </div>
         <div className="health-gauge">
           <svg width="80" height="80" viewBox="0 0 80 80">
@@ -193,31 +403,24 @@ function HeroSection({ dayData }) {
             />
           </svg>
           <div className="health-gauge-value" style={{ color: healthColor }}>
-            {Math.round(dayData.run_health_score)}
+            {Math.round(healthScore)}
           </div>
         </div>
         <div className="hero-tile-sub" style={{ textAlign: "center" }}>
-          {dayData.run_health_score >= 80 ? "Healthy" : 
-           dayData.run_health_score >= 60 ? "Watch" : "At Risk"}
+          {healthScore >= 80 ? "Healthy" : healthScore >= 60 ? "Watch" : "At Risk"}
         </div>
       </div>
 
-      {/* Predicted Run End */}
+      {/* Remaining Days */}
       <div className="hero-tile">
         <div className="hero-tile-header">
-          <span className="hero-tile-label">Predicted Run End</span>
-          <span className="hero-tile-badge blue">
-            ±{dayData.prediction_ci_90pct_days}d CI
-          </span>
+          <span className="hero-tile-label">Days Remaining</span>
         </div>
-        <div className="hero-tile-value" style={{ fontSize: "1.5rem" }}>
-          {dayData.predicted_end_date}
+        <div className="hero-tile-value" style={{ fontSize: "2rem" }}>
+          {activeScenario?.predicted_remaining_days || dayData.predicted_remaining_days}
         </div>
         <div className="hero-tile-sub">
-          {dayData.predicted_end_date_early} – {dayData.predicted_end_date_late}
-        </div>
-        <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
-          {dayData.predicted_remaining_days} days remaining
+          ±{dayData.prediction_ci_90pct_days}d CI (90%)
         </div>
       </div>
 
@@ -229,10 +432,7 @@ function HeroSection({ dayData }) {
             {dayData.predictability_score}
           </span>
         </div>
-        <div className="hero-tile-value" style={{ fontSize: "1.5rem" }}>
-          {dayData.predictability_score}
-        </div>
-        <div className="predictability-bands">
+        <div className="predictability-bands" style={{ margin: "1rem 0" }}>
           {[1, 2, 3, 4, 5].map((i) => (
             <div 
               key={i} 
@@ -240,8 +440,8 @@ function HeroSection({ dayData }) {
             ></div>
           ))}
         </div>
-        <div className="hero-tile-sub" style={{ textAlign: "center", marginTop: "0.5rem" }}>
-          Confidence band tightening
+        <div className="hero-tile-sub" style={{ textAlign: "center" }}>
+          Confidence: {dayData.predictability_score === "High" ? "Tight" : dayData.predictability_score === "Medium" ? "Moderate" : "Wide"}
         </div>
       </div>
 
@@ -256,24 +456,23 @@ function HeroSection({ dayData }) {
         <div className="hero-tile-sub">
           Band: {dayData.eaa_output_band_min}–{dayData.eaa_output_band_max} TPD
         </div>
-        <div className="output-total-box">
-          <div style={{ color: "var(--text-muted)" }}>Expected Total Till End</div>
-          <div style={{ fontWeight: 700, color: "var(--text-primary)", fontSize: "1rem" }}>
-            {dayData.expected_total_output_tons?.toLocaleString()} tons
-          </div>
-        </div>
       </div>
     </div>
   );
 }
 
-function ProgressSection({ currentDay, dayData, progressPercent, projectedEndPercent }) {
+function ProgressSection({ currentDay, dayData, activeScenario, scenarioMode }) {
+  const progressPercent = (currentDay / 111) * 100;
+  const forecastEndDay = activeScenario?.forecast_end_day || dayData.forecast_end_day_p50;
+  const projectedEndPercent = (forecastEndDay / 111) * 100;
+  const ci = dayData.prediction_ci_90pct_days;
+
   return (
     <div className="progress-section" data-testid="progress-section">
       <div className="progress-header">
         <span className="progress-title">Golden Run Progress</span>
         <span className="golden-info">
-          Golden Run Candidate: 02-Dec-2024 → 23-Mar-2025 (~111 days)
+          Golden Candidate: 02-Dec-2024 → 23-Mar-2025 (111 days)
         </span>
       </div>
       
@@ -288,67 +487,76 @@ function ProgressSection({ currentDay, dayData, progressPercent, projectedEndPer
         {/* Projection overlay */}
         {projectedEndPercent > progressPercent && (
           <div 
-            className="projection-overlay"
+            className={`projection-overlay ${scenarioMode === "execute_moves" ? "simulated" : ""}`}
             style={{ 
               left: `${progressPercent}%`,
               width: `${Math.min(100, projectedEndPercent) - progressPercent}%`
             }}
           >
             <span className="projection-label">
-              Projected: {dayData.predicted_end_date_early} – {dayData.predicted_end_date_late}
+              P50: {activeScenario?.predicted_end_date_p50 || dayData.predicted_end_date_p50}
             </span>
           </div>
         )}
         
         {/* Golden target marker */}
         <div className="golden-target-marker">
-          <span className="golden-target-label">Golden: 111 days</span>
+          <span className="golden-target-label">Golden: 111d</span>
         </div>
       </div>
       
       <div className="progress-labels">
-        <span>Day 1 (02-Dec-2024)</span>
-        <span>Day 111 (23-Mar-2025)</span>
+        <span>Day 1</span>
+        <span>Day 111 (Golden)</span>
       </div>
     </div>
   );
 }
 
-function RunPlanSection({ timeSeries, currentDay, dayData }) {
-  const chartData = timeSeries.map(d => ({
-    day: d.day,
-    output: Math.round(d.eaa_output_tpd),
-    cumulative: Math.round(d.cumulative_output_tons / 1000),
-    health: d.run_health_score
-  }));
+function RunPlanSection({ timeSeries, currentDay, dayData, events }) {
+  // Add event markers to chart data
+  const chartData = timeSeries.map(d => {
+    const dayEvents = events?.events?.filter(e => e.day === d.day) || [];
+    return {
+      day: d.day,
+      output: Math.round(d.eaa_output_tpd),
+      polymer: Math.round(d.polymer_burden_kg_per_day),
+      health: d.run_health_score,
+      hasEvent: dayEvents.length > 0,
+      eventType: dayEvents[0]?.type,
+      eventSeverity: dayEvents[0]?.severity
+    };
+  });
 
-  const forecastData = [];
-  const lastOutput = dayData.eaa_output_tpd;
-  for (let i = 1; i <= dayData.predicted_remaining_days && currentDay + i <= 111; i++) {
-    const decay = 1 - (i / dayData.predicted_remaining_days) * 0.1;
-    forecastData.push({
-      day: currentDay + i,
-      output: Math.round(lastOutput * decay),
-      forecast: true
-    });
-  }
-
-  const showIntervention = dayData.fouling_risk_index > 4;
-  const interventionStart = currentDay + 5;
-  const interventionEnd = currentDay + 12;
+  // Find events for markers
+  const eventMarkers = events?.events?.filter(e => e.day <= currentDay) || [];
 
   return (
     <div className="run-plan-section" data-testid="run-plan">
       <div className="section-header">
         <span className="section-title">
           <TrendingUp size={16} />
-          Run Plan: Output Trajectory
+          Output Trajectory
         </span>
+        <div style={{ display: "flex", gap: "1rem", fontSize: "0.6875rem" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+            <span style={{ width: 8, height: 8, background: "#3B82F6", borderRadius: "50%" }}></span>
+            Output (TPD)
+          </span>
+          <span style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+            <span style={{ width: 8, height: 8, background: "#F59E0B", borderRadius: "50%" }}></span>
+            Polymer (kg/day)
+          </span>
+          <span style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+            <span style={{ width: 8, height: 2, background: "#EF4444" }}></span>
+            Events
+          </span>
+        </div>
       </div>
       
-      <div className="chart-container">
+      <div className="chart-container" style={{ height: 220 }}>
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={[...chartData, ...forecastData]} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+          <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="outputGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3}/>
@@ -362,9 +570,18 @@ function RunPlanSection({ timeSeries, currentDay, dayData }) {
               axisLine={{ stroke: "#E2E8F0" }}
             />
             <YAxis 
+              yAxisId="output"
               tick={{ fontSize: 10, fill: "#64748B" }}
               axisLine={{ stroke: "#E2E8F0" }}
               domain={[280, 380]}
+              orientation="left"
+            />
+            <YAxis 
+              yAxisId="polymer"
+              tick={{ fontSize: 10, fill: "#F59E0B" }}
+              axisLine={{ stroke: "#F59E0B" }}
+              domain={[0, 1200]}
+              orientation="right"
             />
             <Tooltip 
               contentStyle={{ 
@@ -374,41 +591,54 @@ function RunPlanSection({ timeSeries, currentDay, dayData }) {
                 fontSize: 12,
                 boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)"
               }}
-              formatter={(value, name) => [value, name === "output" ? "Output (TPD)" : name]}
+              formatter={(value, name) => {
+                if (name === "output") return [value + " TPD", "Output"];
+                if (name === "polymer") return [value + " kg/day", "Polymer"];
+                return [value, name];
+              }}
             />
             <Area 
+              yAxisId="output"
               type="monotone" 
               dataKey="output" 
               stroke="#3B82F6" 
               strokeWidth={2}
               fill="url(#outputGradient)"
             />
-            <ReferenceLine x={currentDay} stroke="#1E293B" strokeDasharray="5 5" />
-            {showIntervention && (
+            <Line
+              yAxisId="polymer"
+              type="monotone"
+              dataKey="polymer"
+              stroke="#F59E0B"
+              strokeWidth={2}
+              dot={false}
+            />
+            <ReferenceLine yAxisId="output" x={currentDay} stroke="#1E293B" strokeDasharray="5 5" />
+            
+            {/* Event markers */}
+            {eventMarkers.map((event, idx) => (
               <ReferenceLine 
-                x={interventionStart} 
-                stroke="#F59E0B" 
+                key={idx}
+                yAxisId="output"
+                x={event.day} 
+                stroke={event.severity === "high" ? "#EF4444" : event.severity === "medium" ? "#F59E0B" : "#3B82F6"}
+                strokeWidth={2}
                 strokeDasharray="3 3"
-                label={{ value: "Window Start", fill: "#F59E0B", fontSize: 10 }}
               />
-            )}
-          </AreaChart>
+            ))}
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
       
-      {showIntervention && (
-        <div className="intervention-window">
-          <AlertTriangle size={18} className="intervention-icon" />
-          <div className="intervention-content">
-            <div className="intervention-title">
-              Recommended Intervention Window: Day {interventionStart}–{interventionEnd}
-            </div>
-            <div className="intervention-detail">
-              Proactive cleaning during this window reduces unplanned termination risk by ~25% (simulated)
-            </div>
+      {/* Event legend */}
+      <div className="event-markers-legend">
+        {eventMarkers.slice(-3).map((event, idx) => (
+          <div key={idx} className={`event-marker-item ${event.severity}`}>
+            <span className="event-marker-day">Day {event.day}</span>
+            <span className="event-marker-type">{event.type.replace(/_/g, " ")}</span>
           </div>
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   );
 }
@@ -420,7 +650,7 @@ function DriversSection({ drivers }) {
         <div className="section-header">
           <span className="section-title">
             <AlertTriangle size={16} />
-            Top 5 Drivers
+            Top Drivers
           </span>
         </div>
         <div style={{ padding: "2rem", textAlign: "center", color: "var(--text-muted)" }}>
@@ -436,7 +666,7 @@ function DriversSection({ drivers }) {
       <div className="section-header">
         <span className="section-title">
           <AlertTriangle size={16} />
-          Top 5 Drivers (Why At Risk?)
+          Top Drivers (Why At Risk?)
         </span>
       </div>
       <div className="drivers-list">
@@ -471,16 +701,21 @@ function DriversSection({ drivers }) {
   );
 }
 
-function FoulingSection({ dayData, timeSeries }) {
+function FoulingSection({ dayData, timeSeries, events }) {
   const polymerColor = dayData.polymer_build_index > 70 ? "#EF4444" : 
                        dayData.polymer_build_index > 40 ? "#F59E0B" : "#10B981";
+
+  // Get recent filter cleaning events
+  const filterEvents = events?.events?.filter(e => 
+    e.type === "FILTER_CLEANING_SPIKE" && e.day <= dayData.day
+  ).slice(-2) || [];
 
   return (
     <div className="fouling-section" data-testid="fouling-section">
       <div className="section-header">
         <span className="section-title">
           <Beaker size={16} />
-          Fouling & Polymer Build
+          Fouling & Polymer
         </span>
       </div>
       
@@ -489,33 +724,42 @@ function FoulingSection({ dayData, timeSeries }) {
           <div className="fouling-metric-value" style={{ color: polymerColor }}>
             {dayData.polymer_build_index}
           </div>
-          <div className="fouling-metric-label">Polymer Build Index (0-100)</div>
+          <div className="fouling-metric-label">Polymer Index (0-100)</div>
         </div>
         <div className="fouling-metric">
           <div className="fouling-metric-value">
             {Math.round(dayData.polymer_burden_kg_per_day)}
           </div>
-          <div className="fouling-metric-label">Polymer Burden (kg/day)</div>
+          <div className="fouling-metric-label">Burden (kg/day)</div>
         </div>
         <div className="fouling-metric">
           <div className="fouling-metric-value">
             {dayData.filter_change_count_per_day.toFixed(1)}
           </div>
-          <div className="fouling-metric-label">Filter Changes (/day)</div>
+          <div className="fouling-metric-label">Filter Δ (/day)</div>
         </div>
       </div>
       
+      {/* Recent filter events */}
+      {filterEvents.length > 0 && (
+        <div className="filter-events">
+          {filterEvents.map((evt, idx) => (
+            <div key={idx} className={`filter-event ${evt.severity}`}>
+              <span className="filter-event-day">Day {evt.day}</span>
+              <span className="filter-event-note">{evt.operator_note?.slice(0, 50)}...</span>
+            </div>
+          ))}
+        </div>
+      )}
+      
       {/* Mini trend chart */}
-      <div style={{ height: 100, marginTop: "1rem" }}>
+      <div style={{ height: 80, marginTop: "0.75rem" }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={timeSeries.slice(-14)} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
             <XAxis dataKey="day" tick={{ fontSize: 9, fill: "#64748B" }} axisLine={false} />
             <YAxis tick={{ fontSize: 9, fill: "#64748B" }} axisLine={false} />
-            <Tooltip 
-              contentStyle={{ background: "#FFFFFF", border: "1px solid #E2E8F0", fontSize: 11 }}
-            />
-            <Line type="monotone" dataKey="polymer_burden_kg_per_day" stroke="#F59E0B" strokeWidth={2} dot={false} name="Polymer (kg/d)" />
+            <Line type="monotone" dataKey="polymer_burden_kg_per_day" stroke="#F59E0B" strokeWidth={2} dot={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -523,7 +767,7 @@ function FoulingSection({ dayData, timeSeries }) {
   );
 }
 
-function WhatChangedSection({ changes }) {
+function WhatChangedSection({ changes, events }) {
   return (
     <div className="what-changed-section" data-testid="what-changed">
       <div className="section-header">
@@ -564,7 +808,7 @@ function WhatChangedSection({ changes }) {
               </div>
               {change.has_event && change.events.map((evt, i) => (
                 <div key={i} className="timeline-event-note">
-                  <strong>{evt.type}</strong>: {evt.operator_note?.slice(0, 60)}...
+                  <strong>{evt.type.replace(/_/g, " ")}</strong>: {evt.operator_note?.slice(0, 60)}...
                 </div>
               ))}
             </div>
@@ -617,6 +861,13 @@ function ActionCard({ action, priority, status, reasonCode, onUpdateStatus }) {
   const [expanded, setExpanded] = useState(priority === 1 && status === "New");
   const [showReasonDialog, setShowReasonDialog] = useState(false);
   
+  const urgencyConfig = {
+    "critical": { bg: "#FEE2E2", border: "#EF4444", label: "CRITICAL", color: "#EF4444" },
+    "high": { bg: "#FEF3C7", border: "#F59E0B", label: "HIGH", color: "#F59E0B" },
+    "medium": { bg: "#E0E7FF", border: "#6366F1", label: "MEDIUM", color: "#6366F1" },
+    "routine": { bg: "#F1F5F9", border: "#94A3B8", label: "ROUTINE", color: "#94A3B8" }
+  };
+  
   const statusConfig = {
     "New": { bg: "var(--bg-card)", border: "var(--border)", icon: null },
     "Acknowledged": { bg: "#FEF3C7", border: "#F59E0B", icon: <Eye size={14} color="#F59E0B" /> },
@@ -624,7 +875,11 @@ function ActionCard({ action, priority, status, reasonCode, onUpdateStatus }) {
     "Not Feasible": { bg: "#FEE2E2", border: "#EF4444", icon: <XCircle size={14} color="#EF4444" /> }
   };
 
-  const currentConfig = statusConfig[status] || statusConfig["New"];
+  const urgency = urgencyConfig[action.urgency] || urgencyConfig["medium"];
+  const currentStatus = statusConfig[status] || statusConfig["New"];
+  const trigger = action.trigger || {};
+  const expectedEffect = action.expected_effect || {};
+  const impact = action.impact_on_done || {};
 
   const reasonCodes = [
     { code: "UTILITY_CONSTRAINT", label: "Utility constraint" },
@@ -642,35 +897,32 @@ function ActionCard({ action, priority, status, reasonCode, onUpdateStatus }) {
 
   return (
     <div 
-      className="move-card" 
+      className={`move-card ${action.urgency}`}
       data-testid={`move-card-${action.id}`}
       style={{ 
-        background: currentConfig.bg,
-        borderColor: currentConfig.border
+        background: status !== "New" ? currentStatus.bg : urgency.bg,
+        borderColor: status !== "New" ? currentStatus.border : urgency.border
       }}
     >
       <div className="move-card-header" onClick={() => setExpanded(!expanded)} style={{ cursor: "pointer" }}>
         <div className="move-priority" style={{ 
-          background: status === "Done" ? "#10B981" : status === "Not Feasible" ? "#9CA3AF" : "var(--accent-blue)"
+          background: status === "Done" ? "#10B981" : status === "Not Feasible" ? "#9CA3AF" : urgency.color
         }}>
           {status === "Done" ? <Check size={14} /> : priority}
         </div>
         <div className="move-title-section">
-          <div className="move-title" style={{ 
-            textDecoration: status === "Done" || status === "Not Feasible" ? "line-through" : "none",
-            opacity: status === "Done" || status === "Not Feasible" ? 0.7 : 1
-          }}>
-            {action.title}
+          <div className="move-title-row">
+            <div className="move-title" style={{ 
+              textDecoration: status === "Done" || status === "Not Feasible" ? "line-through" : "none",
+              opacity: status === "Done" || status === "Not Feasible" ? 0.7 : 1
+            }}>
+              {action.title}
+            </div>
+            <span className={`urgency-badge ${action.urgency}`}>{urgency.label}</span>
           </div>
-          <div className="move-trigger">
-            {action.metric} • {action.time_window}
-            {status !== "New" && (
-              <span className="status-badge" style={{ marginLeft: "0.5rem" }}>
-                {currentConfig.icon}
-                {status}
-                {reasonCode && ` (${reasonCode.replace(/_/g, " ").toLowerCase()})`}
-              </span>
-            )}
+          <div className="move-protects">
+            <Shield size={12} />
+            Protects: {action.protects}
           </div>
         </div>
         {expanded ? <ChevronDown size={16} color="var(--text-muted)" /> : <ChevronRight size={16} color="var(--text-muted)" />}
@@ -679,40 +931,91 @@ function ActionCard({ action, priority, status, reasonCode, onUpdateStatus }) {
       {expanded && (
         <>
           <div className="move-card-body">
-            <div className="move-metric-row">
-              <span className="move-metric-label">Current</span>
-              <span className="move-metric-value warning">{action.current_value}</span>
+            {/* Trigger section */}
+            <div className="trigger-section">
+              <div className="trigger-header">TRIGGER</div>
+              <div className="trigger-grid">
+                <div className="trigger-item">
+                  <span className="trigger-label">Metric</span>
+                  <span className="trigger-value">{trigger.metric}</span>
+                </div>
+                <div className="trigger-item">
+                  <span className="trigger-label">Current</span>
+                  <span className="trigger-value warning">{trigger.current}</span>
+                </div>
+                <div className="trigger-item">
+                  <span className="trigger-label">Baseline</span>
+                  <span className="trigger-value">{trigger.baseline}</span>
+                </div>
+                <div className="trigger-item">
+                  <span className="trigger-label">Deviation</span>
+                  <span className="trigger-value critical">{trigger.deviation}</span>
+                </div>
+              </div>
+              <div className="trigger-timewindow">
+                <Clock size={12} />
+                {trigger.time_window}
+              </div>
             </div>
-            <div className="move-metric-row">
-              <span className="move-metric-label">Baseline</span>
-              <span className="move-metric-value">{action.baseline}</span>
-            </div>
-            <div className="move-metric-row">
-              <span className="move-metric-label">Assets</span>
-              <span className="move-metric-value" style={{ fontSize: "0.6875rem" }}>
-                {action.where?.join(", ")}
-              </span>
+
+            {/* Assets */}
+            <div className="assets-section">
+              <span className="assets-label">Assets:</span>
+              <div className="assets-tags">
+                {action.where?.map((tag, i) => (
+                  <span key={i} className="asset-tag">{tag}</span>
+                ))}
+              </div>
             </div>
             
             <div className="move-why-box">
-              <strong style={{ color: "var(--text-primary)" }}>Why:</strong> {action.why}
+              <strong>Why:</strong> {action.why}
             </div>
             
             <div className="move-checklist">
               <div className="move-checklist-title">Action Checklist</div>
               <div className="move-checklist-items">
-                {action.checklist?.slice(0, 5).map((item, idx) => (
+                {action.checklist?.map((item, idx) => (
                   <div key={idx} className="move-checklist-item">
-                    <span className="move-checklist-bullet"></span>
+                    <span className="move-checklist-bullet">{idx + 1}</span>
                     <span>{item}</span>
                   </div>
                 ))}
               </div>
             </div>
             
-            <div className="move-expected">
-              <CheckCircle size={14} />
-              <span>{action.expected_effect}</span>
+            {/* Expected Effect */}
+            <div className="expected-effect-section">
+              <div className="expected-effect-header">
+                <TrendingUp size={14} />
+                Expected Effect (Simulated)
+              </div>
+              <div className="expected-effect-grid">
+                {expectedEffect.run_length && (
+                  <div className="effect-item">
+                    <span className="effect-label">Run Length</span>
+                    <span className="effect-value positive">{expectedEffect.run_length}</span>
+                  </div>
+                )}
+                {expectedEffect.polymer_slope && (
+                  <div className="effect-item">
+                    <span className="effect-label">Polymer</span>
+                    <span className="effect-value">{expectedEffect.polymer_slope}</span>
+                  </div>
+                )}
+                {expectedEffect.productivity && (
+                  <div className="effect-item">
+                    <span className="effect-label">Productivity</span>
+                    <span className="effect-value">{expectedEffect.productivity}</span>
+                  </div>
+                )}
+              </div>
+              {impact.remaining_days_delta > 0 && (
+                <div className="impact-preview">
+                  <Zap size={12} />
+                  Marking Done will add +{impact.remaining_days_delta} days to forecast
+                </div>
+              )}
             </div>
           </div>
           
@@ -761,6 +1064,13 @@ function ActionCard({ action, priority, status, reasonCode, onUpdateStatus }) {
                 <XCircle size={14} />
                 Not Feasible
               </button>
+            </div>
+          )}
+          
+          {status === "Done" && impact.remaining_days_delta > 0 && (
+            <div className="done-impact-bar">
+              <CheckCircle size={14} />
+              <span>Impact applied: +{impact.remaining_days_delta} days, +{impact.health_score_delta} health</span>
             </div>
           )}
         </>
@@ -910,7 +1220,7 @@ function EvidenceDrawer({ events, onClose }) {
                     {pipe.last_seen_hours_ago}h ago
                   </span>
                   <span className={`evidence-pipeline-status ${pipe.status.toLowerCase()}`}>
-                    {pipe.status}
+                    {pipe.status === "BROKEN" ? "Feed broken" : pipe.status === "LATE" ? "Feed late" : pipe.status}
                   </span>
                 </div>
               </div>
