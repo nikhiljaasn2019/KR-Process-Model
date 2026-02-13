@@ -875,7 +875,7 @@ body {
   position: sticky;
   top: 60px;
   height: calc(100vh - 60px - 3rem);
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .moves-panel {
@@ -886,6 +886,7 @@ body {
   display: flex;
   flex-direction: column;
   box-shadow: var(--shadow-sm);
+  overflow: hidden;
 }
 
 .moves-header {
@@ -894,10 +895,11 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .moves-title {
-  font-size: 1rem;
+  font-size: 0.875rem;
   font-weight: 700;
   color: var(--text-primary);
 }
@@ -920,6 +922,7 @@ body {
 .moves-list {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 1rem;
   display: flex;
   flex-direction: column;
@@ -930,8 +933,9 @@ body {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 10px;
-  overflow: hidden;
+  overflow: visible;
   transition: all 0.2s ease;
+  flex-shrink: 0;
 }
 
 .move-card:hover {
