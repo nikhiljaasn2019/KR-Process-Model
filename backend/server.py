@@ -326,28 +326,83 @@ class SimulationEngine:
         return drivers[:5]
     
     def _get_actions_for_day(self, day: int, metrics: dict) -> List[dict]:
-        """Generate top 3 specific actions with full details"""
+        """Generate urgent, specific actions with full details for critical days"""
         actions = []
+        is_critical_day = day in [52, 70, 96] or day >= 90
         
-        # Find closest anchor
-        closest_anchor = self.anchors[0]
-        for anchor in self.anchors:
-            if anchor["day"] <= day:
-                closest_anchor = anchor
+        # Calculate deviations for triggers
+        polymer_baseline = 180
+        polymer_current = metrics["polymer_burden_kg_per_day"]
+        polymer_deviation = ((polymer_current - polymer_baseline) / polymer_baseline) * 100
         
-        # Action 1: Based on polymer burden
-        if metrics["polymer_burden_kg_per_day"] > 400:
+        filter_baseline = 0.4
+        filter_current = metrics["filter_change_count_per_day"]
+        filter_deviation = ((filter_current - filter_baseline) / filter_baseline) * 100
+        
+        fouling_baseline = 2.2
+        fouling_current = metrics["fouling_risk_index"]
+        fouling_deviation = ((fouling_current - fouling_baseline) / fouling_baseline) * 100
+        
+        inhibitor_baseline = 1.0
+        inhibitor_current = metrics["inhibitor_dose_index"]
+        inhibitor_deviation = ((inhibitor_current - inhibitor_baseline) / inhibitor_baseline) * 100
+        
+        # Critical day urgent actions (NOT routine) 
+        if is_critical_day and metrics["polymer_burden_kg_per_day"] > 600:
             actions.append({
                 "id": f"ACT-{day:03d}-01",
                 "priority": 1,
+                "urgency": "critical",
+                "title": "Emergency Flush Cycle + Filter Swap",
+                "protects": "Run Length",
+                "trigger": {
+                    "metric": "Polymer Burden",
+                    "current": f"{int(polymer_current)} kg/day",
+                    "baseline": f"{polymer_baseline} kg/day",
+                    "band": "150-220 kg/day",
+                    "deviation": f"+{polymer_deviation:.0f}%",
+                    "time_window": "Last 24h"
+                },
+                "where": ["G8", "G9", "V-014", "V-022"],
+                "why": f"Polymer at {polymer_deviation:.0f}% above baseline threatens run termination within 7-10 days without intervention",
+                "checklist": [
+                    "IMMEDIATE: Initiate emergency flush on G8 (20 min cycle, max pressure)",
+                    "Swap G9 filter element if DP > 1.0 bar",
+                    "Increase inhibitor flow by 5% for next 48h",
+                    "Log polymer collection volume (target: >50kg removal)",
+                    "Brief oncoming shift: 'Run rescue protocol active'",
+                    "Schedule follow-up inspection at +24h"
+                ],
+                "expected_effect": {
+                    "run_length": "+4 to +8 days (simulated)",
+                    "polymer_slope": "↓ flatten for 72h",
+                    "confidence": "Medium-High"
+                },
+                "impact_on_done": {
+                    "remaining_days_delta": 6,
+                    "health_score_delta": 3,
+                    "polymer_reduction_pct": 20,
+                    "ci_tightening_days": 1
+                },
+                "status": "New"
+            })
+        elif metrics["polymer_burden_kg_per_day"] > 400:
+            actions.append({
+                "id": f"ACT-{day:03d}-01",
+                "priority": 1,
+                "urgency": "high" if is_critical_day else "medium",
                 "title": "Increase Flush Frequency",
-                "metric": "Polymer Burden",
-                "current_value": f"{int(metrics['polymer_burden_kg_per_day'])} kg/day",
-                "baseline": "180 kg/day",
-                "time_window": "Last 24h",
-                "what": "Add +1 flush cycle per shift to G8, G9 filters",
+                "protects": "Run Length",
+                "trigger": {
+                    "metric": "Polymer Burden",
+                    "current": f"{int(polymer_current)} kg/day",
+                    "baseline": f"{polymer_baseline} kg/day",
+                    "band": "150-220 kg/day",
+                    "deviation": f"+{polymer_deviation:.0f}%",
+                    "time_window": "Last 24h"
+                },
                 "where": ["G8", "G9", "V-014"],
-                "why": "Polymer accumulation rate 2.3x baseline; preemptive flushing reduces filter change frequency",
+                "why": f"Polymer accumulation at {polymer_deviation:.0f}% above baseline; preemptive flushing reduces filter change frequency",
                 "checklist": [
                     "Verify flush line pressure at G8 (target: 4.5-5.0 bar)",
                     "Open flush valve for G9 and run 15-min cycle",
@@ -355,47 +410,76 @@ class SimulationEngine:
                     "Check DP across filters before/after (target drop: 0.2-0.4 bar)",
                     "Update shift log with flush completion time"
                 ],
-                "expected_effect": "Reduce polymer accumulation by 15-25% over next 48h (simulated)",
+                "expected_effect": {
+                    "run_length": "+2 to +4 days (simulated)",
+                    "polymer_slope": "↓ reduce by 15-25% over 48h",
+                    "confidence": "Medium"
+                },
+                "impact_on_done": {
+                    "remaining_days_delta": 3,
+                    "health_score_delta": 2,
+                    "polymer_reduction_pct": 15,
+                    "ci_tightening_days": 0
+                },
                 "status": "New"
             })
         
-        # Action 2: Based on filter changes
-        if metrics["filter_change_count_per_day"] > 1.0:
+        # Critical: Fouling risk cluster response
+        if is_critical_day and metrics["fouling_risk_index"] > 5.5:
             actions.append({
                 "id": f"ACT-{day:03d}-02",
-                "priority": 2,
-                "title": "Schedule Preventive Filter Inspection",
-                "metric": "Filter Change Frequency",
-                "current_value": f"{metrics['filter_change_count_per_day']:.1f}/day",
-                "baseline": "0.4/day",
-                "time_window": "Last 48h",
-                "what": "Conduct visual + DP inspection of high-frequency filters",
-                "where": ["G8", "G9"],
-                "why": "Filter changes at 3x baseline; early inspection prevents unplanned downtime",
+                "priority": 1 if len(actions) == 0 else 2,
+                "urgency": "critical",
+                "title": "Activate Run Rescue Mode",
+                "protects": "Both",
+                "trigger": {
+                    "metric": "Fouling Risk Index",
+                    "current": f"{fouling_current:.1f}/10",
+                    "baseline": f"{fouling_baseline}/10",
+                    "band": "1.5-3.0/10",
+                    "deviation": f"+{fouling_deviation:.0f}%",
+                    "time_window": "Last 72h trend"
+                },
+                "where": ["V-014", "V-022", "E-015", "G8", "G9"],
+                "why": f"Fouling risk at {fouling_current:.1f} indicates imminent polymer cascade; rescue mode slows deterioration",
                 "checklist": [
-                    "Take G8 offline during shift change window (06:00 or 18:00)",
-                    "Measure DP across filter element (record value)",
-                    "Visual inspection for polymer deposits (photograph if abnormal)",
-                    "If DP > 1.2 bar or visible fouling, initiate replacement",
-                    "Document inspection findings in maintenance log"
+                    "Declare 'Run Rescue Mode' in shift log (triggers enhanced monitoring)",
+                    "Reduce temperature bands on V-014, V-022 by 1°C",
+                    "Increase cleaning cadence: +1 cycle per shift",
+                    "Inhibitor dose: increase by 8% for 72h",
+                    "Hourly DP checks on G8, G9 (log all readings)",
+                    "Alert maintenance: potential filter swap in 24-48h"
                 ],
-                "expected_effect": "Identify 1-2 filters nearing replacement; avoid unplanned change (simulated)",
+                "expected_effect": {
+                    "run_length": "+5 to +10 days (simulated)",
+                    "risk_slope": "↓ reduce compounding by 30%",
+                    "confidence": "Medium"
+                },
+                "impact_on_done": {
+                    "remaining_days_delta": 7,
+                    "health_score_delta": 5,
+                    "polymer_reduction_pct": 25,
+                    "ci_tightening_days": 2
+                },
                 "status": "New"
             })
-        
-        # Action 3: Based on fouling risk
-        if metrics["fouling_risk_index"] > 4.5:
+        elif metrics["fouling_risk_index"] > 4.5:
             actions.append({
-                "id": f"ACT-{day:03d}-03",
-                "priority": 3,
+                "id": f"ACT-{day:03d}-02",
+                "priority": 2 if len(actions) > 0 else 1,
+                "urgency": "high" if is_critical_day else "medium",
                 "title": "Tighten Temperature Operating Band",
-                "metric": "Fouling Risk Index",
-                "current_value": f"{metrics['fouling_risk_index']:.1f}/10",
-                "baseline": "2.2/10",
-                "time_window": "Last 72h",
-                "what": "Reduce temperature setpoint tolerance on V-014, V-022",
+                "protects": "Run Length",
+                "trigger": {
+                    "metric": "Fouling Risk Index",
+                    "current": f"{fouling_current:.1f}/10",
+                    "baseline": f"{fouling_baseline}/10",
+                    "band": "1.5-3.0/10",
+                    "deviation": f"+{fouling_deviation:.0f}%",
+                    "time_window": "Last 72h"
+                },
                 "where": ["V-014", "V-022", "E-015"],
-                "why": "Elevated fouling risk correlates with temperature excursions; tighter control reduces polymer formation rate",
+                "why": f"Fouling risk elevated at +{fouling_deviation:.0f}%; tighter temp control reduces polymer formation",
                 "checklist": [
                     "Access DCS and navigate to V-014 temperature loop",
                     "Reduce high alarm from +3°C to +2°C above setpoint",
@@ -403,23 +487,77 @@ class SimulationEngine:
                     "Brief incoming shift on tighter bands (verbal + logbook)",
                     "Monitor for 12h; if no alarms, bands are sustainable"
                 ],
-                "expected_effect": "Reduce temperature-driven polymer formation by 10-20% (simulated)",
+                "expected_effect": {
+                    "run_length": "+2 to +5 days (simulated)",
+                    "polymer_slope": "↓ reduce formation by 10-20%",
+                    "confidence": "Medium"
+                },
+                "impact_on_done": {
+                    "remaining_days_delta": 3,
+                    "health_score_delta": 2,
+                    "polymer_reduction_pct": 12,
+                    "ci_tightening_days": 1
+                },
                 "status": "New"
             })
         
-        # Action 4: Inhibitor check
+        # Filter inspection (if filter changes elevated)
+        if metrics["filter_change_count_per_day"] > 1.0:
+            actions.append({
+                "id": f"ACT-{day:03d}-03",
+                "priority": len(actions) + 1,
+                "urgency": "high" if filter_current > 2.0 else "medium",
+                "title": "Schedule Preventive Filter Inspection",
+                "protects": "Productivity",
+                "trigger": {
+                    "metric": "Filter Change Frequency",
+                    "current": f"{filter_current:.1f}/day",
+                    "baseline": f"{filter_baseline}/day",
+                    "band": "0.3-0.6/day",
+                    "deviation": f"+{filter_deviation:.0f}%",
+                    "time_window": "Last 48h"
+                },
+                "where": ["G8", "G9"],
+                "why": f"Filter changes at +{filter_deviation:.0f}% of baseline; early inspection prevents unplanned downtime",
+                "checklist": [
+                    "Take G8 offline during shift change window (06:00 or 18:00)",
+                    "Measure DP across filter element (record value)",
+                    "Visual inspection for polymer deposits (photograph if abnormal)",
+                    "If DP > 1.2 bar or visible fouling, initiate replacement",
+                    "Document inspection findings in maintenance log"
+                ],
+                "expected_effect": {
+                    "productivity": "Avoid 2-4h unplanned downtime (simulated)",
+                    "filter_life": "Extend by identifying issues early",
+                    "confidence": "High"
+                },
+                "impact_on_done": {
+                    "remaining_days_delta": 1,
+                    "health_score_delta": 1,
+                    "polymer_reduction_pct": 5,
+                    "ci_tightening_days": 0
+                },
+                "status": "New"
+            })
+        
+        # Inhibitor check
         if metrics["inhibitor_dose_index"] > 1.1:
             actions.append({
                 "id": f"ACT-{day:03d}-04",
-                "priority": 4,
+                "priority": len(actions) + 1,
+                "urgency": "medium",
                 "title": "Validate Inhibitor Injection Point",
-                "metric": "Inhibitor Dose Index",
-                "current_value": f"{metrics['inhibitor_dose_index']:.2f}",
-                "baseline": "1.00",
-                "time_window": "Last 7d trend",
-                "what": "Inspect inhibitor injection line for partial blockage",
+                "protects": "Run Length",
+                "trigger": {
+                    "metric": "Inhibitor Dose Index",
+                    "current": f"{inhibitor_current:.2f}",
+                    "baseline": f"{inhibitor_baseline:.2f}",
+                    "band": "0.95-1.08",
+                    "deviation": f"+{inhibitor_deviation:.0f}%",
+                    "time_window": "Last 7d trend"
+                },
                 "where": ["V-014", "V-012", "LV3601"],
-                "why": "Dose creep suggests reduced injection efficiency; early detection prevents polymerization events",
+                "why": f"Dose creep at +{inhibitor_deviation:.0f}% suggests reduced injection efficiency; early fix prevents polymerization",
                 "checklist": [
                     "Isolate injection line LV3601 (coordinate with panel)",
                     "Flush line with cleaning solvent for 10 min",
@@ -427,12 +565,63 @@ class SimulationEngine:
                     "Measure flow rate and compare to baseline (±5% acceptable)",
                     "If blocked, replace nozzle and re-validate"
                 ],
-                "expected_effect": "Restore injection efficiency; dose index should stabilize at 1.05-1.08 (simulated)",
+                "expected_effect": {
+                    "run_length": "+1 to +3 days (simulated)",
+                    "dose_index": "Stabilize at 1.05-1.08",
+                    "confidence": "Medium"
+                },
+                "impact_on_done": {
+                    "remaining_days_delta": 2,
+                    "health_score_delta": 1,
+                    "polymer_reduction_pct": 8,
+                    "ci_tightening_days": 0
+                },
                 "status": "New"
             })
         
-        # Default actions if nothing triggered
+        # Default routine action only if nothing else triggered
         if len(actions) == 0:
+            actions = [
+                {
+                    "id": f"ACT-{day:03d}-01",
+                    "priority": 1,
+                    "urgency": "routine",
+                    "title": "Routine DP Trend Review",
+                    "protects": "Both",
+                    "trigger": {
+                        "metric": "System DP",
+                        "current": "Within band",
+                        "baseline": "Within band",
+                        "band": "Normal",
+                        "deviation": "0%",
+                        "time_window": "Last 24h"
+                    },
+                    "where": ["G8", "G9"],
+                    "why": "Proactive monitoring catches drift before it becomes actionable",
+                    "checklist": [
+                        "Pull 24h DP trend from DCS historian",
+                        "Confirm no upward drift > 0.1 bar/day",
+                        "Note any step changes (investigate if found)",
+                        "Document 'stable' in shift log"
+                    ],
+                    "expected_effect": {
+                        "run_length": "Maintain baseline (simulated)",
+                        "early_warning": "Detect drift before critical",
+                        "confidence": "High"
+                    },
+                    "impact_on_done": {
+                        "remaining_days_delta": 0,
+                        "health_score_delta": 0,
+                        "polymer_reduction_pct": 0,
+                        "ci_tightening_days": 0
+                    },
+                    "status": "New"
+                }
+            ]
+        
+        # Sort by priority and return top 3
+        actions.sort(key=lambda x: x["priority"])
+        return actions[:3]
             actions = [
                 {
                     "id": f"ACT-{day:03d}-01",
