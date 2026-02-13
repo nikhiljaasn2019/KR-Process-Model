@@ -1,0 +1,114 @@
+{
+  "meta": {
+    "run_id": "KR-AA-GOLDEN-CANDIDATE",
+    "version": "0.2-ops-events",
+    "note": "Events are plausible, narrative-driven spikes for demo UX (not ground truth)."
+  },
+  "events": [
+    {
+      "day": 12,
+      "type": "FILTER_CLEANING_SPIKE",
+      "severity": "medium",
+      "asset_tags": ["G8", "G9"],
+      "observed": {
+        "filter_change_count_today": 2,
+        "polymer_collected_kg_today": 900
+      },
+      "operator_note": "Filter frequency increased vs baseline; carried out additional cleaning cycle."
+    },
+    {
+      "day": 19,
+      "type": "TEMP_EXCURSION",
+      "severity": "low",
+      "asset_tags": ["V-014"],
+      "observed": {
+        "temp_band_breach_minutes": 18,
+        "polymer_collected_kg_today": 650
+      },
+      "operator_note": "Short excursion; brought back into band. Monitoring continues."
+    },
+    {
+      "day": 33,
+      "type": "INHIBITOR_LINE_CHECK",
+      "severity": "low",
+      "asset_tags": ["V-014", "V-012"],
+      "observed": {
+        "inhibitor_dose_index": 1.10
+      },
+      "operator_note": "Checked injection point health; no obvious choking; dose nudged up as precaution."
+    },
+    {
+      "day": 52,
+      "type": "FOULING_RISK_CLUSTER",
+      "severity": "high",
+      "asset_tags": ["V-022", "G-016", "E-018"],
+      "observed": {
+        "fouling_risk_index": 7.1,
+        "polymer_collected_kg_today": 2400,
+        "filter_change_count_today": 3
+      },
+      "operator_note": "Multiple drifts observed; initiated Run Rescue Mode for 72 hours."
+    },
+    {
+      "day": 71,
+      "type": "RUN_RESCUE_MODE",
+      "severity": "high",
+      "asset_tags": ["G8", "G9", "V-014", "V-022"],
+      "observed": {
+        "flush_cycles_added_per_day": 1,
+        "cleaning_cadence": "increased",
+        "filter_change_count_today": 4
+      },
+      "operator_note": "Tightened operating bands + increased cleaning cadence. ED review requested."
+    },
+    {
+      "day": 96,
+      "type": "PREDICTED_END_SHIFT",
+      "severity": "medium",
+      "asset_tags": ["V-022"],
+      "observed": {
+        "predicted_remaining_days_before": 22,
+        "predicted_remaining_days_after": 14
+      },
+      "operator_note": "Model confidence improved; predicted end moved closer due to sustained polymer burden."
+    }
+  ],
+  "shift_logs": [
+    {
+      "day": 12,
+      "shift": "B",
+      "summary": "Filter change frequency elevated; polymer collection higher than normal.",
+      "actions_taken": ["extra filter cleaning cycle", "increased flush frequency"],
+      "flags": ["WATCH"]
+    },
+    {
+      "day": 52,
+      "shift": "C",
+      "summary": "Risk cluster observed across multiple tags; initiated Run Rescue Mode.",
+      "actions_taken": ["tightened bands", "inhibitor dose +", "scheduled ED review"],
+      "flags": ["HIGH_RISK"]
+    }
+  ],
+  "lab_results": [
+    {
+      "day": 30,
+      "sample": "polymer_mass_balance_proxy",
+      "value": 650,
+      "unit": "kg/day",
+      "comment": "Within watch band; trending upward."
+    },
+    {
+      "day": 70,
+      "sample": "polymer_mass_balance_proxy",
+      "value": 980,
+      "unit": "kg/day",
+      "comment": "High; align with filter frequency + proactive cleaning."
+    }
+  ],
+  "data_pipeline_status": [
+    { "source": "DCS_export", "last_seen_hours_ago": 2, "status": "OK" },
+    { "source": "shift_log_entry", "last_seen_hours_ago": 6, "status": "OK" },
+    { "source": "lab_report", "last_seen_hours_ago": 30, "status": "LATE" },
+    { "source": "maintenance_note", "last_seen_hours_ago": 72, "status": "OK" }
+  ]
+}

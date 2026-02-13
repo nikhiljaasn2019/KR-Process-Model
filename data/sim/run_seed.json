@@ -1,0 +1,212 @@
+{
+  "meta": {
+    "project": "BPCL KR AA Run Health - Conviction Prototype",
+    "purpose": "Demo UX + flows + plausibility (not true ML, not true setpoints).",
+    "timezone": "Asia/Kolkata",
+    "version": "0.2-seed-anchors"
+  },
+  "golden_run_candidate": {
+    "run_id": "KR-AA-GOLDEN-CANDIDATE",
+    "start_ts": "2024-12-02T17:20:00+05:30",
+    "end_ts": "2025-03-23T07:06:00+05:30",
+    "notes": "Derived from activity report restart + shutdown timestamps; used only for demo narrative."
+  },
+  "kpi_targets": {
+    "target_run_length_days": 111,
+    "target_output_tpd_band": { "p50": 340, "min": 310, "max": 360 },
+    "target_predictability": {
+      "goal": "Stable predicted end-of-run with tightening confidence bands as run progresses",
+      "initial_ci_days_90pct": 12,
+      "late_ci_days_90pct": 4
+    }
+  },
+  "reference_ranges_from_reports": {
+    "monthly_eaa_tmt_examples": [
+      { "month": "2024-09", "eaa_tmt": 10.38 },
+      { "month": "2024-10", "eaa_tmt": 10.70 },
+      { "month": "2025-01", "eaa_tmt": 10.10 },
+      { "month": "2025-02", "eaa_tmt": 9.23 }
+    ],
+    "monthly_polymer_mt_examples": [
+      { "month": "2024-09", "polymer_mt": 4.05 },
+      { "month": "2024-10", "polymer_mt": 39.83 },
+      { "month": "2025-01", "polymer_mt": 20.15 },
+      { "month": "2025-02", "polymer_mt": 45.12 }
+    ],
+    "notes": "Use these to keep simulated daily output/polymer within believable envelopes."
+  },
+  "sim_generation_rules": {
+    "timebase": "day_index",
+    "anchor_interpolation": "piecewise_linear",
+    "jitter": {
+      "enabled": true,
+      "seed": 42,
+      "max_pct": 2.5,
+      "notes": "Small deterministic jitter so charts feel alive but not chaotic."
+    },
+    "event_overrides": {
+      "enabled": true,
+      "notes": "Ops events add spikes (polymer, DP, filter changes) + temporary output hits."
+    }
+  },
+  "metrics": {
+    "run_health_score": { "min": 0, "max": 100 },
+    "predicted_remaining_days": { "min": 0, "max": 200 },
+    "eaa_output_tpd": { "min": 0, "max": 450 },
+    "polymer_burden_kg_per_day": { "min": 0, "max": 4000 },
+    "filter_change_count_per_day": { "min": 0, "max": 6 },
+    "inhibitor_dose_index": { "min": 0.7, "max": 1.4 },
+    "fouling_risk_index": { "min": 0, "max": 10 },
+    "data_freshness_score": { "min": 0, "max": 100 }
+  },
+  "anchors": [
+    {
+      "day": 1,
+      "run_health_score": 92,
+      "predicted_remaining_days": 110,
+      "predicted_end_date": "2025-03-23",
+      "prediction_ci_90pct_days": 12,
+      "eaa_output_tpd": 345,
+      "polymer_burden_kg_per_day": 180,
+      "filter_change_count_per_day": 0.4,
+      "inhibitor_dose_index": 1.00,
+      "fouling_risk_index": 2.2,
+      "data_freshness_score": 96,
+      "top_drivers": [
+        "startup stabilization (normal)",
+        "baseline DP/temps within band",
+        "polymer burden low"
+      ],
+      "top_actions": [
+        "Hold inhibitor dose at baseline; verify spray/nozzle health",
+        "Daily quick-check: DP trend on critical filters",
+        "Confirm flushing routine executed per SOP"
+      ]
+    },
+    {
+      "day": 7,
+      "run_health_score": 90,
+      "predicted_remaining_days": 104,
+      "predicted_end_date": "2025-03-23",
+      "prediction_ci_90pct_days": 10,
+      "eaa_output_tpd": 352,
+      "polymer_burden_kg_per_day": 240,
+      "filter_change_count_per_day": 0.5,
+      "inhibitor_dose_index": 1.02,
+      "fouling_risk_index": 2.8,
+      "data_freshness_score": 95,
+      "top_drivers": [
+        "mild upward DP drift (watch)",
+        "polymer burden rising but manageable"
+      ],
+      "top_actions": [
+        "Increase flush frequency by +1 cycle/day for 72 hours (preventive)",
+        "Validate inhibitor injection point flow (no partial choking)",
+        "Do a targeted inspection of known 'polymer hotspot' lines (visual + temp)"
+      ]
+    },
+    {
+      "day": 18,
+      "run_health_score": 87,
+      "predicted_remaining_days": 94,
+      "predicted_end_date": "2025-03-23",
+      "prediction_ci_90pct_days": 9,
+      "eaa_output_tpd": 348,
+      "polymer_burden_kg_per_day": 420,
+      "filter_change_count_per_day": 0.7,
+      "inhibitor_dose_index": 1.05,
+      "fouling_risk_index": 3.6,
+      "data_freshness_score": 93,
+      "top_drivers": [
+        "filter change rate trending up",
+        "polymer burden increased vs week-1",
+        "one-off temperature excursions observed (simulated)"
+      ],
+      "top_actions": [
+        "Add 'hotspot patrol': 3 specific checkpoints each shift (DP/temp/visual)",
+        "Lock-in tighter band on critical temperatures for next 7 days",
+        "Shift briefing: 'filter frequency up' = early warning; act same shift"
+      ]
+    },
+    {
+      "day": 30,
+      "run_health_score": 85,
+      "predicted_remaining_days": 82,
+      "predicted_end_date": "2025-03-23",
+      "prediction_ci_90pct_days": 8,
+      "eaa_output_tpd": 340,
+      "polymer_burden_kg_per_day": 650,
+      "filter_change_count_per_day": 0.9,
+      "inhibitor_dose_index": 1.08,
+      "fouling_risk_index": 4.3,
+      "data_freshness_score": 92,
+      "top_drivers": [
+        "polymer burden moderate-high",
+        "filter changes approaching 1/day",
+        "inhibitor dose creeping up"
+      ],
+      "top_actions": [
+        "Schedule a preventive mini-cleaning window (2–3 hours) instead of waiting",
+        "Confirm chemical quality + dosing integrity (no supply-side variability)",
+        "Review last 30-day 'exceptions list' and kill repeat offenders"
+      ]
+    },
+    {
+      "day": 70,
+      "run_health_score": 75,
+      "predicted_remaining_days": 45,
+      "predicted_end_date": "2025-03-24",
+      "prediction_ci_90pct_days": 6,
+      "eaa_output_tpd": 325,
+      "polymer_burden_kg_per_day": 980,
+      "filter_change_count_per_day": 1.6,
+      "inhibitor_dose_index": 1.15,
+      "fouling_risk_index": 6.1,
+      "data_freshness_score": 90,
+      "top_drivers": [
+        "filter frequency elevated (sustained)",
+        "polymer burden high (sustained)",
+        "risk clustering: multiple small drifts at once"
+      ],
+      "top_actions": [
+        "Trigger 'Run Rescue Mode': tighten bands + increase cleaning cadence",
+        "Force a same-day RCA on top 2 drifting signals (don't wait a week)",
+        "Move from reactive to proactive filter strategy (predict + schedule)"
+      ]
+    },
+    {
+      "day": 110,
+      "run_health_score": 62,
+      "predicted_remaining_days": 2,
+      "predicted_end_date": "2025-03-23",
+      "prediction_ci_90pct_days": 4,
+      "eaa_output_tpd": 305,
+      "polymer_burden_kg_per_day": 1500,
+      "filter_change_count_per_day": 3.0,
+      "inhibitor_dose_index": 1.28,
+      "fouling_risk_index": 8.2,
+      "data_freshness_score": 88,
+      "top_drivers": [
+        "polymer burden extreme",
+        "filter changes multiple/day",
+        "run end approaching (simulated) unless intervention succeeds"
+      ],
+      "top_actions": [
+        "Prepare controlled shutdown plan + cleaning checklist (avoid chaotic stop)",
+        "Capture 'before shutdown' evidence bundle for ML learning",
+        "Lock next run startup plan to 'golden conditions' template"
+      ]
+    }
+  ],
+  "assets_dictionary": [
+    "V-012",
+    "V-014",
+    "V-022",
+    "G-016",
+    "E-015",
+    "E-018",
+    "G8",
+    "G9",
+    "LV3601"
+  ]
+}
