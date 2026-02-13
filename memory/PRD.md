@@ -1,6 +1,6 @@
 # KR AA Run Health OS - Product Requirements Document
 
-## Version 2.2 - Decision Instrument (Feb 2026)
+## Version 2.2.1 - Bug Fixes (Feb 2026)
 
 ## Original Problem Statement
 Build a conviction prototype for BPCL Kochi Refinery Acrylic Acid unit that makes the ED + operators feel: "We desperately need this to achieve long AND predictable runs (>= golden run) and to plan output + shutdowns."
