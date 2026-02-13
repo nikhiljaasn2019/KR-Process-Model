@@ -120,9 +120,9 @@ export default function Simulator() {
               className="control-slider"
               style={{ width: "100%" }}
             />
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "#64748B" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-muted)" }}>
               <span>0.9</span>
-              <span style={{ color: "#F8FAFC", fontWeight: 600 }}>{inhibitorDose.toFixed(2)}</span>
+              <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{inhibitorDose.toFixed(2)}</span>
               <span>1.3</span>
             </div>
           </div>
@@ -273,15 +273,15 @@ export default function Simulator() {
               {/* Key Insight */}
               <div style={{ 
                 padding: "1rem",
-                background: "rgba(59, 130, 246, 0.1)",
+                background: "rgba(59, 130, 246, 0.05)",
                 borderRadius: "8px",
-                border: "1px solid rgba(59, 130, 246, 0.3)",
+                border: "1px solid rgba(59, 130, 246, 0.2)",
                 marginTop: "1rem"
               }}>
                 <div style={{ fontSize: "0.75rem", color: "#3B82F6", fontWeight: 600, marginBottom: "0.5rem" }}>
                   Key Insight
                 </div>
-                <div style={{ fontSize: "0.8125rem", color: "#94A3B8", lineHeight: 1.5 }}>
+                <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
                   {simulationResult.deltas.remaining_days > 5 
                     ? `With these adjustments, the run could extend by ${simulationResult.deltas.remaining_days} days, yielding an additional ${simulationResult.deltas.total_output?.toLocaleString()} tons of output.`
                     : simulationResult.deltas.remaining_days > 0
@@ -299,26 +299,26 @@ export default function Simulator() {
               <div style={{ 
                 marginTop: "1rem",
                 padding: "1rem",
-                background: "#242E42",
+                background: "var(--bg-hover)",
                 borderRadius: "8px",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center"
               }}>
                 <div>
-                  <div style={{ fontSize: "0.6875rem", color: "#64748B", textTransform: "uppercase" }}>
+                  <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", textTransform: "uppercase" }}>
                     Simulated End Date
                   </div>
-                  <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "#F8FAFC" }}>
+                  <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)" }}>
                     {simulationResult.simulated.predicted_end_date}
                   </div>
                 </div>
-                <ArrowRight size={20} style={{ color: "#64748B" }} />
+                <ArrowRight size={20} style={{ color: "var(--text-muted)" }} />
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: "0.6875rem", color: "#64748B", textTransform: "uppercase" }}>
+                  <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", textTransform: "uppercase" }}>
                     vs Baseline
                   </div>
-                  <div style={{ fontSize: "1rem", fontWeight: 600, color: "#64748B" }}>
+                  <div style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-muted)" }}>
                     {simulationResult.baseline.predicted_end_date}
                   </div>
                 </div>
