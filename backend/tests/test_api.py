@@ -168,10 +168,10 @@ class TestEvents:
 
 
 class TestQuickDays:
-    """Tests for quick days endpoint"""
+    """Tests for quick days endpoint - Updated for Decision Instrument"""
     
     def test_quick_days(self):
-        """Test quick days returns jump options"""
+        """Test quick days returns jump options - now includes Day 7, 30, 52, 70, 96, 110"""
         response = requests.get(f"{BASE_URL}/api/quick-days")
         assert response.status_code == 200
         data = response.json()
@@ -183,10 +183,14 @@ class TestQuickDays:
             assert "day" in day_opt
             assert "label" in day_opt
             assert "phase" in day_opt
-        # Verify specific days
+            assert "moment" in day_opt  # New field for Decision Instrument
+        # Verify specific days (updated: 7, 30, 52, 70, 96, 110)
         days = [d["day"] for d in data["days"]]
-        assert 1 in days
+        assert 7 in days  # Changed from 1 to 7
         assert 30 in days
+        assert 52 in days  # New critical day
+        assert 70 in days  # Default landing day
+        assert 96 in days  # New critical day
         assert 110 in days
         print(f"Quick days: {days}")
 
@@ -378,7 +382,7 @@ class TestDataIntegrity:
     """Tests for data integrity and consistency"""
     
     def test_day_data_has_actions(self):
-        """Test that day data includes actions for Today's Moves"""
+        """Test that day data includes actions for Today's Moves - Updated structure"""
         response = requests.get(f"{BASE_URL}/api/day/30")
         assert response.status_code == 200
         data = response.json()
@@ -387,11 +391,22 @@ class TestDataIntegrity:
         assert len(data["actions"]) <= 3
         if len(data["actions"]) > 0:
             action = data["actions"][0]
+            # Updated action structure for Decision Instrument
             assert "id" in action
             assert "title" in action
-            assert "metric" in action
+            assert "urgency" in action  # New: critical/high/medium/routine
+            assert "protects" in action  # New: Run Length/Productivity/Both
+            assert "trigger" in action  # New: replaces 'metric'
+            assert "where" in action  # New: asset tags
             assert "checklist" in action
             assert "expected_effect" in action
+            assert "impact_on_done" in action  # New: immediate impact when marked Done
+            # Verify trigger structure
+            trigger = action["trigger"]
+            assert "metric" in trigger
+            assert "current" in trigger
+            assert "baseline" in trigger
+            assert "deviation" in trigger
         print(f"Day 30 actions count: {len(data['actions'])}")
 
     def test_day_data_has_drivers(self):
