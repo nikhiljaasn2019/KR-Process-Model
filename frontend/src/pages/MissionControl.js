@@ -833,7 +833,7 @@ function RightRail({ actions, currentDay, actionStatuses, updateActionStatus }) 
       <div className="moves-panel" data-testid="moves-panel">
         <div className="moves-header">
           <div>
-            <span className="moves-title">Today's Moves</span>
+            <span className="moves-title">Actions to be taken today</span>
             <div className="moves-subtitle">
               {completedCount}/{actions.length} done • {acknowledgedCount} acknowledged
             </div>
