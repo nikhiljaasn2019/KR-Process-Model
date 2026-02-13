@@ -187,171 +187,185 @@ function DayControls({ currentDay, dayData, quickDays, onDayChange, onOpenEviden
   );
 }
 
-function ScenarioToggle({ mode, setMode, comparison }) {
+function ScenarioComparison({ dayData, comparison }) {
   if (!comparison) return null;
 
-  const delta = comparison.deltas;
+  const baselineTarget = 111;
+  const doNothing = comparison.do_nothing;
+  const executeMoves = comparison.execute_moves;
+  const deltas = comparison.deltas;
+
+  const doNothingGap = doNothing.forecast_end_day - baselineTarget;
+  const executeGap = executeMoves.forecast_end_day - baselineTarget;
 
   return (
-    <div className="scenario-toggle-bar" data-testid="scenario-toggle">
-      <div className="scenario-toggle-label">
-        <Zap size={14} />
-        <span>Scenario View</span>
-      </div>
-      
-      <div className="scenario-toggle-options">
-        <button 
-          className={`scenario-btn ${mode === "do_nothing" ? "active" : ""}`}
-          onClick={() => setMode("do_nothing")}
-        >
-          <TrendingDown size={14} />
-          If we do nothing
-        </button>
-        <button 
-          className={`scenario-btn ${mode === "execute_moves" ? "active green" : ""}`}
-          onClick={() => setMode("execute_moves")}
-        >
-          <CheckCircle size={14} />
-          If we execute Today's Moves
-          {delta && delta.remaining_days > 0 && (
-            <span className="scenario-delta">+{delta.remaining_days}d</span>
-          )}
-        </button>
+    <div className="scenario-comparison" data-testid="scenario-comparison">
+      <div className="scenario-comparison-header">
+        <div className="scenario-comparison-title">
+          <Zap size={16} />
+          Scenario Comparison
+        </div>
+        <div className="prototype-label">
+          <AlertCircle size={10} />
+          Prototype / Simulated
+        </div>
       </div>
 
-      <div className="prototype-label">
-        <AlertCircle size={10} />
-        Prototype / Simulated
+      <div className="scenario-panels">
+        {/* Do Nothing Scenario */}
+        <div className="scenario-panel do-nothing">
+          <div className="scenario-panel-header">
+            <TrendingDown size={16} />
+            <span>If we do nothing</span>
+          </div>
+          
+          <div className="scenario-panel-content">
+            {/* Deviation from Benchmark */}
+            <div className="benchmark-deviation">
+              <div className="deviation-label">Deviation vs Benchmark</div>
+              <div className={`deviation-value ${doNothingGap >= 0 ? "positive" : "negative"}`}>
+                {doNothingGap >= 0 ? "+" : ""}{doNothingGap} days
+              </div>
+              <div className="deviation-status">
+                {doNothingGap >= 0 ? (
+                  <><CheckCircle size={12} /> On track</>
+                ) : (
+                  <><AlertTriangle size={12} /> Behind target</>
+                )}
+              </div>
+            </div>
+
+            {/* Key Metrics */}
+            <div className="scenario-metrics">
+              <div className="scenario-metric">
+                <span className="metric-label">Baseline Target</span>
+                <span className="metric-value">{baselineTarget} days</span>
+              </div>
+              <div className="scenario-metric">
+                <span className="metric-label">Forecast (P50)</span>
+                <span className="metric-value">{doNothing.predicted_end_date_p50}</span>
+              </div>
+              <div className="scenario-metric">
+                <span className="metric-label">Days Remaining</span>
+                <span className="metric-value">{doNothing.predicted_remaining_days}d</span>
+              </div>
+              <div className="scenario-metric">
+                <span className="metric-label">Health Score</span>
+                <span className="metric-value">{Math.round(doNothing.run_health_score)}</span>
+              </div>
+            </div>
+
+            {/* Output Commitment */}
+            <div className="scenario-output">
+              <div className="output-row">
+                <span className="output-tag p90">P90</span>
+                <span className="output-label">Committed</span>
+                <span className="output-value">{doNothing.output_p90_tons.toLocaleString()} t</span>
+              </div>
+              <div className="output-row">
+                <span className="output-tag p50">P50</span>
+                <span className="output-label">Expected</span>
+                <span className="output-value">{doNothing.output_p50_tons.toLocaleString()} t</span>
+              </div>
+              <div className="output-row">
+                <span className="output-tag p10">P10</span>
+                <span className="output-label">Upside</span>
+                <span className="output-value">{doNothing.output_p10_tons.toLocaleString()} t</span>
+              </div>
+            </div>
+
+            <div className="scenario-shutdown">
+              <Calendar size={12} />
+              <span>Shutdown: {doNothing.shutdown_window_start} → {doNothing.shutdown_window_end}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Delta Arrow */}
+        <div className="scenario-delta-arrow">
+          <ArrowRight size={24} />
+          <div className="delta-summary">
+            <div className="delta-item positive">+{deltas.remaining_days}d</div>
+            <div className="delta-item positive">+{deltas.output_p50.toLocaleString()}t</div>
+          </div>
+        </div>
+
+        {/* Execute Moves Scenario */}
+        <div className="scenario-panel execute-moves">
+          <div className="scenario-panel-header">
+            <CheckCircle size={16} />
+            <span>If we execute actions</span>
+            <span className="simulated-tag">SIMULATED</span>
+          </div>
+          
+          <div className="scenario-panel-content">
+            {/* Deviation from Benchmark */}
+            <div className="benchmark-deviation">
+              <div className="deviation-label">Deviation vs Benchmark</div>
+              <div className={`deviation-value ${executeGap >= 0 ? "positive" : "negative"}`}>
+                {executeGap >= 0 ? "+" : ""}{executeGap} days
+              </div>
+              <div className="deviation-status">
+                {executeGap >= 0 ? (
+                  <><CheckCircle size={12} /> On track</>
+                ) : (
+                  <><AlertTriangle size={12} /> Behind target</>
+                )}
+              </div>
+            </div>
+
+            {/* Key Metrics */}
+            <div className="scenario-metrics">
+              <div className="scenario-metric">
+                <span className="metric-label">Baseline Target</span>
+                <span className="metric-value">{baselineTarget} days</span>
+              </div>
+              <div className="scenario-metric">
+                <span className="metric-label">Forecast (P50)</span>
+                <span className="metric-value highlight">{executeMoves.predicted_end_date_p50}</span>
+              </div>
+              <div className="scenario-metric">
+                <span className="metric-label">Days Remaining</span>
+                <span className="metric-value highlight">{executeMoves.predicted_remaining_days}d</span>
+              </div>
+              <div className="scenario-metric">
+                <span className="metric-label">Health Score</span>
+                <span className="metric-value highlight">{Math.round(executeMoves.run_health_score)}</span>
+              </div>
+            </div>
+
+            {/* Output Commitment */}
+            <div className="scenario-output">
+              <div className="output-row">
+                <span className="output-tag p90">P90</span>
+                <span className="output-label">Committed</span>
+                <span className="output-value highlight">{executeMoves.output_p90_tons.toLocaleString()} t</span>
+              </div>
+              <div className="output-row">
+                <span className="output-tag p50">P50</span>
+                <span className="output-label">Expected</span>
+                <span className="output-value highlight">{executeMoves.output_p50_tons.toLocaleString()} t</span>
+              </div>
+              <div className="output-row">
+                <span className="output-tag p10">P10</span>
+                <span className="output-label">Upside</span>
+                <span className="output-value highlight">{executeMoves.output_p10_tons.toLocaleString()} t</span>
+              </div>
+            </div>
+
+            <div className="scenario-shutdown">
+              <Calendar size={12} />
+              <span>Shutdown: {executeMoves.shutdown_window_start} → {executeMoves.shutdown_window_end}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function GoldenGapTile({ dayData, activeScenario, scenarioMode }) {
-  const goldenTarget = 111;
-  const forecastEndDay = activeScenario?.forecast_end_day || dayData.forecast_end_day_p50;
-  const gap = forecastEndDay - goldenTarget;
-  const isOnTrack = gap >= 0;
-
-  return (
-    <div className={`decision-tile golden-gap ${isOnTrack ? "on-track" : "behind"}`} data-testid="golden-gap">
-      <div className="decision-tile-header">
-        <div className="decision-tile-icon">
-          <Target size={18} />
-        </div>
-        <span className="decision-tile-title">Golden Gap</span>
-        {scenarioMode === "execute_moves" && (
-          <span className="simulated-badge">Simulated</span>
-        )}
-      </div>
-      
-      <div className="golden-gap-content">
-        <div className="golden-gap-main">
-          <div className={`golden-gap-value ${isOnTrack ? "positive" : "negative"}`}>
-            {gap >= 0 ? "+" : ""}{gap}
-          </div>
-          <div className="golden-gap-unit">days vs Golden</div>
-        </div>
-        
-        <div className="golden-gap-details">
-          <div className="detail-row">
-            <span className="detail-label">Golden Target</span>
-            <span className="detail-value">{goldenTarget} days</span>
-          </div>
-          <div className="detail-row">
-            <span className="detail-label">Forecast (P50)</span>
-            <span className="detail-value">{activeScenario?.predicted_end_date_p50 || dayData.predicted_end_date_p50}</span>
-          </div>
-          <div className="detail-row">
-            <span className="detail-label">Forecast (P90)</span>
-            <span className="detail-value">{activeScenario?.predicted_end_date_p90 || dayData.predicted_end_date_p90}</span>
-          </div>
-        </div>
-      </div>
-      
-      <div className={`golden-gap-status ${isOnTrack ? "on-track" : "behind"}`}>
-        {isOnTrack ? (
-          <>
-            <CheckCircle size={14} />
-            <span>On track to beat Golden</span>
-          </>
-        ) : (
-          <>
-            <AlertTriangle size={14} />
-            <span>{Math.abs(gap)} days behind Golden target</span>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function CommitmentView({ dayData, activeScenario, scenarioMode }) {
-  const p90 = activeScenario?.output_p90_tons || dayData.output_p90_tons;
-  const p50 = activeScenario?.output_p50_tons || dayData.output_p50_tons;
-  const p10 = activeScenario?.output_p10_tons || dayData.output_p10_tons;
-  const shutdownStart = activeScenario?.shutdown_window_start || dayData.shutdown_window_start;
-  const shutdownEnd = activeScenario?.shutdown_window_end || dayData.shutdown_window_end;
-
-  return (
-    <div className="decision-tile commitment-view" data-testid="commitment-view">
-      <div className="decision-tile-header">
-        <div className="decision-tile-icon">
-          <Package size={18} />
-        </div>
-        <span className="decision-tile-title">Commitment View (for ED)</span>
-        {scenarioMode === "execute_moves" && (
-          <span className="simulated-badge">Simulated</span>
-        )}
-      </div>
-      
-      <div className="commitment-content">
-        <div className="commitment-row committed">
-          <div className="commitment-label">
-            <span className="commitment-tag">P90</span>
-            Committed Output
-          </div>
-          <div className="commitment-value">
-            {p90.toLocaleString()} <span className="unit">tons</span>
-          </div>
-        </div>
-        
-        <div className="commitment-row expected">
-          <div className="commitment-label">
-            <span className="commitment-tag blue">P50</span>
-            Expected Output
-          </div>
-          <div className="commitment-value">
-            {p50.toLocaleString()} <span className="unit">tons</span>
-          </div>
-        </div>
-        
-        <div className="commitment-row upside">
-          <div className="commitment-label">
-            <span className="commitment-tag green">P10</span>
-            Upside Output
-          </div>
-          <div className="commitment-value">
-            {p10.toLocaleString()} <span className="unit">tons</span>
-          </div>
-        </div>
-        
-        <div className="commitment-shutdown">
-          <div className="shutdown-label">
-            <Calendar size={14} />
-            Shutdown Window (P90)
-          </div>
-          <div className="shutdown-dates">
-            {shutdownStart} → {shutdownEnd}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function HeroSection({ dayData, activeScenario, scenarioMode }) {
-  const healthScore = activeScenario?.run_health_score || dayData.run_health_score;
+function HeroSection({ dayData }) {
+  const healthScore = dayData.run_health_score;
   const healthColor = healthScore >= 80 ? "#10B981" : healthScore >= 60 ? "#F59E0B" : "#EF4444";
   
   const circumference = 2 * Math.PI * 35;
@@ -366,7 +380,6 @@ function HeroSection({ dayData, activeScenario, scenarioMode }) {
       <div className="hero-tile">
         <div className="hero-tile-header">
           <span className="hero-tile-label">Run Health</span>
-          {scenarioMode === "execute_moves" && <span className="simulated-mini">SIM</span>}
         </div>
         <div className="health-gauge">
           <svg width="80" height="80" viewBox="0 0 80 80">
@@ -394,7 +407,7 @@ function HeroSection({ dayData, activeScenario, scenarioMode }) {
           <span className="hero-tile-label">Days Remaining</span>
         </div>
         <div className="hero-tile-value" style={{ fontSize: "2rem" }}>
-          {activeScenario?.predicted_remaining_days || dayData.predicted_remaining_days}
+          {dayData.predicted_remaining_days}
         </div>
         <div className="hero-tile-sub">
           ±{dayData.prediction_ci_90pct_days}d CI (90%)
@@ -438,16 +451,20 @@ function HeroSection({ dayData, activeScenario, scenarioMode }) {
   );
 }
 
-function ProgressSection({ currentDay, dayData, activeScenario, scenarioMode }) {
+function ProgressSection({ currentDay, dayData, comparison }) {
   const progressPercent = (currentDay / 111) * 100;
-  const forecastEndDay = activeScenario?.forecast_end_day || dayData.forecast_end_day_p50;
+  const forecastEndDay = dayData.forecast_end_day_p50;
   const projectedEndPercent = (forecastEndDay / 111) * 100;
   const ci = dayData.prediction_ci_90pct_days;
+
+  // Execute moves projection
+  const executeEndDay = comparison?.execute_moves?.forecast_end_day || forecastEndDay;
+  const executeEndPercent = (executeEndDay / 111) * 100;
 
   return (
     <div className="progress-section" data-testid="progress-section">
       <div className="progress-header">
-        <span className="progress-title">Golden Run Progress</span>
+        <span className="progress-title">Benchmark Run Progress</span>
         <span className="golden-info">
           Golden Candidate: 02-Dec-2024 → 23-Mar-2025 (111 days)
         </span>
