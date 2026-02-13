@@ -998,6 +998,8 @@ body {
 
 .move-card-body {
   padding: 0.875rem 1rem;
+  max-height: 400px;
+  overflow-y: auto;
 }
 
 .move-metric-row {
