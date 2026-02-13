@@ -86,36 +86,20 @@ export default function MissionControl() {
           onOpenEvidence={() => setEvidenceDrawerOpen(true)}
         />
 
-        {/* Scenario Toggle - Do Nothing vs Execute Moves */}
-        <ScenarioToggle 
-          mode={scenarioMode}
-          setMode={setScenarioMode}
+        {/* Side-by-Side Scenario Comparison */}
+        <ScenarioComparison 
+          dayData={dayData}
           comparison={scenarioComparison}
         />
 
-        {/* Golden Gap + Commitment View (side by side) */}
-        <div className="decision-panels">
-          <GoldenGapTile 
-            dayData={dayData} 
-            activeScenario={activeScenario}
-            scenarioMode={scenarioMode}
-          />
-          <CommitmentView 
-            dayData={dayData} 
-            activeScenario={activeScenario}
-            scenarioMode={scenarioMode}
-          />
-        </div>
-
         {/* Hero KPI Row */}
-        <HeroSection dayData={dayData} activeScenario={activeScenario} scenarioMode={scenarioMode} />
+        <HeroSection dayData={dayData} />
 
-        {/* Golden Progress Bar */}
+        {/* Benchmark Progress Bar */}
         <ProgressSection 
           currentDay={currentDay}
           dayData={dayData}
-          activeScenario={activeScenario}
-          scenarioMode={scenarioMode}
+          comparison={scenarioComparison}
         />
 
         {/* Run Plan - Output Trajectory with Events */}
@@ -136,7 +120,7 @@ export default function MissionControl() {
         <WhatChangedSection changes={whatChanged} events={events} />
       </div>
 
-      {/* Right Rail - Today's Moves */}
+      {/* Right Rail - Actions */}
       <RightRail 
         actions={dayData.actions || []} 
         currentDay={currentDay}
