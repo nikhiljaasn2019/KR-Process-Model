@@ -426,3 +426,236 @@ class TestDataIntegrity:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
+
+
+class TestScenarioComparison:
+    """Tests for scenario comparison endpoint - Decision Instrument feature"""
+    
+    def test_scenario_comparison_day_70(self):
+        """Test scenario comparison for Day 70 (default landing day)"""
+        response = requests.get(f"{BASE_URL}/api/scenario-comparison/70")
+        assert response.status_code == 200
+        data = response.json()
+        
+        # Verify structure
+        assert data["day"] == 70
+        assert "do_nothing" in data
+        assert "execute_moves" in data
+        assert "deltas" in data
+        assert "actions_count" in data
+        
+        # Verify do_nothing scenario
+        do_nothing = data["do_nothing"]
+        assert "predicted_remaining_days" in do_nothing
+        assert "forecast_end_day" in do_nothing
+        assert "golden_gap_days" in do_nothing
+        assert "run_health_score" in do_nothing
+        assert "output_p50_tons" in do_nothing
+        assert "output_p90_tons" in do_nothing
+        assert "output_p10_tons" in do_nothing
+        assert "shutdown_window_start" in do_nothing
+        assert "shutdown_window_end" in do_nothing
+        
+        # Verify execute_moves scenario
+        execute_moves = data["execute_moves"]
+        assert "predicted_remaining_days" in execute_moves
+        assert "golden_gap_days" in execute_moves
+        assert "run_health_score" in execute_moves
+        
+        # Verify deltas
+        deltas = data["deltas"]
+        assert "remaining_days" in deltas
+        assert "health_score" in deltas
+        assert "golden_gap" in deltas
+        assert "output_p50" in deltas
+        
+        # Execute moves should improve metrics
+        assert deltas["remaining_days"] >= 0
+        assert deltas["health_score"] >= 0
+        
+        print(f"Day 70 scenario comparison: +{deltas['remaining_days']} days if execute moves")
+    
+    def test_scenario_comparison_golden_gap(self):
+        """Test that golden gap is calculated correctly (vs 111 days)"""
+        response = requests.get(f"{BASE_URL}/api/scenario-comparison/70")
+        assert response.status_code == 200
+        data = response.json()
+        
+        do_nothing = data["do_nothing"]
+        execute_moves = data["execute_moves"]
+        
+        # Golden gap = forecast_end_day - 111
+        expected_gap_do_nothing = do_nothing["forecast_end_day"] - 111
+        assert do_nothing["golden_gap_days"] == expected_gap_do_nothing
+        
+        expected_gap_execute = execute_moves["forecast_end_day"] - 111
+        assert execute_moves["golden_gap_days"] == expected_gap_execute
+        
+        print(f"Golden gap: Do Nothing={do_nothing['golden_gap_days']}, Execute={execute_moves['golden_gap_days']}")
+
+
+class TestApplyActionImpact:
+    """Tests for apply-action-impact endpoint - Decision Instrument feature"""
+    
+    def test_apply_action_impact_day_70(self):
+        """Test applying action impact on Day 70"""
+        response = requests.post(
+            f"{BASE_URL}/api/apply-action-impact/70",
+            json=["ACT-070-01"]
+        )
+        assert response.status_code == 200
+        data = response.json()
+        
+        # Verify structure
+        assert data["day"] == 70
+        assert "baseline" in data
+        assert "adjusted" in data
+        assert "completed_actions" in data
+        assert "impact_applied" in data
+        
+        # Verify impact was applied
+        impact = data["impact_applied"]
+        assert "remaining_days_delta" in impact
+        assert "health_delta" in impact
+        assert "polymer_reduction_pct" in impact
+        
+        # Adjusted metrics should be better than baseline
+        baseline = data["baseline"]
+        adjusted = data["adjusted"]
+        assert adjusted["predicted_remaining_days"] >= baseline["predicted_remaining_days"]
+        assert adjusted["run_health_score"] >= baseline["run_health_score"]
+        
+        print(f"Impact applied: +{impact['remaining_days_delta']} days, +{impact['health_delta']} health")
+    
+    def test_apply_action_impact_updates_golden_gap(self):
+        """Test that applying action impact updates golden gap"""
+        response = requests.post(
+            f"{BASE_URL}/api/apply-action-impact/70",
+            json=["ACT-070-01", "ACT-070-02"]
+        )
+        assert response.status_code == 200
+        data = response.json()
+        
+        baseline = data["baseline"]
+        adjusted = data["adjusted"]
+        
+        # Golden gap should improve (become more positive or less negative)
+        assert adjusted["golden_gap_days"] >= baseline["golden_gap_days"]
+        
+        print(f"Golden gap: Baseline={baseline['golden_gap_days']}, Adjusted={adjusted['golden_gap_days']}")
+
+
+class TestCommitmentView:
+    """Tests for Commitment View data - P10/P50/P90 outputs"""
+    
+    def test_day_data_has_commitment_view_fields(self):
+        """Test that day data includes P10/P50/P90 output projections"""
+        response = requests.get(f"{BASE_URL}/api/day/70")
+        assert response.status_code == 200
+        data = response.json()
+        
+        # Verify P10/P50/P90 output fields
+        assert "output_p50_tons" in data
+        assert "output_p90_tons" in data
+        assert "output_p10_tons" in data
+        
+        # Verify shutdown window
+        assert "shutdown_window_start" in data
+        assert "shutdown_window_end" in data
+        
+        # P90 (committed) < P50 (expected) < P10 (upside)
+        assert data["output_p90_tons"] <= data["output_p50_tons"]
+        assert data["output_p50_tons"] <= data["output_p10_tons"]
+        
+        print(f"Commitment View: P90={data['output_p90_tons']}, P50={data['output_p50_tons']}, P10={data['output_p10_tons']}")
+    
+    def test_day_data_has_golden_gap_fields(self):
+        """Test that day data includes Golden Gap fields"""
+        response = requests.get(f"{BASE_URL}/api/day/70")
+        assert response.status_code == 200
+        data = response.json()
+        
+        # Verify Golden Gap fields
+        assert "golden_gap_days" in data
+        assert "golden_target_days" in data
+        assert data["golden_target_days"] == 111
+        
+        # Verify forecast end day fields
+        assert "forecast_end_day_p50" in data
+        assert "forecast_end_day_p90" in data
+        assert "forecast_end_day_p10" in data
+        
+        print(f"Golden Gap: {data['golden_gap_days']} days vs target {data['golden_target_days']}")
+
+
+class TestActionCardStructure:
+    """Tests for updated Action Card structure - Decision Instrument"""
+    
+    def test_action_has_urgency_levels(self):
+        """Test that actions have urgency levels (critical/high/medium/routine)"""
+        response = requests.get(f"{BASE_URL}/api/day/70")
+        assert response.status_code == 200
+        data = response.json()
+        
+        actions = data.get("actions", [])
+        assert len(actions) > 0, "Day 70 should have actions"
+        
+        for action in actions:
+            assert "urgency" in action
+            assert action["urgency"] in ["critical", "high", "medium", "routine"]
+        
+        # Day 70 should have critical actions
+        urgencies = [a["urgency"] for a in actions]
+        assert "critical" in urgencies or "high" in urgencies
+        
+        print(f"Action urgencies on Day 70: {urgencies}")
+    
+    def test_action_has_protects_field(self):
+        """Test that actions have 'protects' field (Run Length/Productivity/Both)"""
+        response = requests.get(f"{BASE_URL}/api/day/70")
+        assert response.status_code == 200
+        data = response.json()
+        
+        actions = data.get("actions", [])
+        for action in actions:
+            assert "protects" in action
+            assert action["protects"] in ["Run Length", "Productivity", "Both"]
+        
+        print(f"Actions protect: {[a['protects'] for a in actions]}")
+    
+    def test_action_has_trigger_with_deviation(self):
+        """Test that actions have trigger with deviation percentage"""
+        response = requests.get(f"{BASE_URL}/api/day/70")
+        assert response.status_code == 200
+        data = response.json()
+        
+        actions = data.get("actions", [])
+        for action in actions:
+            assert "trigger" in action
+            trigger = action["trigger"]
+            assert "metric" in trigger
+            assert "current" in trigger
+            assert "baseline" in trigger
+            assert "deviation" in trigger
+            assert "time_window" in trigger
+            # Deviation should be a percentage string like "+448%"
+            assert "%" in trigger["deviation"]
+        
+        print(f"Trigger deviations: {[a['trigger']['deviation'] for a in actions]}")
+    
+    def test_action_has_impact_on_done(self):
+        """Test that actions have impact_on_done for immediate metric updates"""
+        response = requests.get(f"{BASE_URL}/api/day/70")
+        assert response.status_code == 200
+        data = response.json()
+        
+        actions = data.get("actions", [])
+        for action in actions:
+            assert "impact_on_done" in action
+            impact = action["impact_on_done"]
+            assert "remaining_days_delta" in impact
+            assert "health_score_delta" in impact
+            assert "polymer_reduction_pct" in impact
+            assert "ci_tightening_days" in impact
+        
+        print(f"Impact on done: {[a['impact_on_done']['remaining_days_delta'] for a in actions]} days")
