@@ -622,30 +622,6 @@ class SimulationEngine:
         # Sort by priority and return top 3
         actions.sort(key=lambda x: x["priority"])
         return actions[:3]
-            actions = [
-                {
-                    "id": f"ACT-{day:03d}-01",
-                    "priority": 1,
-                    "title": "Routine DP Trend Review",
-                    "metric": "System DP",
-                    "current_value": "Within band",
-                    "baseline": "Within band",
-                    "time_window": "Last 24h",
-                    "what": "Verify DP trends on critical filters are stable",
-                    "where": ["G8", "G9"],
-                    "why": "Proactive monitoring catches drift before it becomes actionable",
-                    "checklist": [
-                        "Pull 24h DP trend from DCS historian",
-                        "Confirm no upward drift > 0.1 bar/day",
-                        "Note any step changes (investigate if found)",
-                        "Document 'stable' in shift log"
-                    ],
-                    "expected_effect": "Maintain baseline performance; early warning if drift begins (simulated)",
-                    "status": "New"
-                }
-            ]
-        
-        return actions[:3]
     
     def _generate_full_series(self) -> Dict[int, dict]:
         """Generate complete time series from Day 1 to Day 111"""
