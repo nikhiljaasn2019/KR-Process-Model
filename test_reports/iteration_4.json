@@ -1,0 +1,104 @@
+{
+  "summary": "Comprehensive testing of KR AA Run Health V2.1 merge complete. All backend APIs (27/27 tests passed) and frontend features working correctly. Navigation simplified to 2 items, Today's Moves panel with action status persistence verified, Evidence drawer functional, Simulator with 4 levers working, light theme applied.",
+  
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  
+  "passed_tests": [
+    "Backend: Root endpoint returns operational status (v2.0)",
+    "Backend: Run info returns golden run metadata (111 days target)",
+    "Backend: Day data endpoints (1, 30, 70, 110) return correct metrics",
+    "Backend: Day boundary clamping works (0→1, 200→111)",
+    "Backend: Time series returns 111 days of data",
+    "Backend: What-changed returns 7 days of changes",
+    "Backend: Events endpoint returns events, shift logs, lab results, pipeline status",
+    "Backend: Quick days returns 6 jump options",
+    "Backend: Simulator baseline and aggressive scenarios work",
+    "Backend: Action status CRUD - Acknowledge, Done, Not Feasible with reason codes",
+    "Backend: Action status persistence in MongoDB verified",
+    "Backend: Intervention window endpoint works",
+    "Frontend: Navigation has exactly 2 items (Mission Control, Simulator)",
+    "Frontend: Mission Control loads with Hero KPIs (Health Score gauge, Predicted Run End, Predictability, Output TPD)",
+    "Frontend: Golden Progress Bar with current day marker and projection overlay",
+    "Frontend: Run Plan output trajectory chart with intervention window",
+    "Frontend: Top 5 Drivers section displays when metrics exceed baseline",
+    "Frontend: Fouling & Polymer Build section with 3 metrics and mini chart",
+    "Frontend: What Changed timeline shows last 7 days",
+    "Frontend: Today's Moves panel shows 3 action cards on Day 70",
+    "Frontend: Action cards expand to show metrics, baseline, assets, why, checklist, expected effect",
+    "Frontend: Acknowledge button works",
+    "Frontend: Done button works with green checkmark status",
+    "Frontend: Not Feasible button opens reason dialog with 6 reason codes",
+    "Frontend: Action statuses persist after page refresh",
+    "Frontend: Evidence button opens drawer with event timeline and filters",
+    "Frontend: Evidence drawer shows events, shift logs, pipeline status",
+    "Frontend: Day selector slider and quick day buttons (1, 7, 18, 30, 70, 110) work",
+    "Frontend: Simulator page loads with 4 operating levers",
+    "Frontend: Simulator shows before/after comparison with delta badges",
+    "Frontend: Light theme applied consistently (bg: rgb(248, 250, 252))"
+  ],
+  
+  "test_report_links": [
+    "/app/backend/tests/test_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  
+  "action_items": [],
+  
+  "critical_code_review_comments": [],
+  
+  "updated_files": [
+    "/app/backend/tests/test_api.py"
+  ],
+  
+  "success_rate": {
+    "backend": "100% (27/27 tests passed)",
+    "frontend": "100%"
+  },
+  
+  "seed_data_creation": "Test action statuses created: TEST-ACT-001 (Acknowledged), TEST-ACT-002 (Done), TEST-ACT-003 (Not Feasible), TEST-PERSIST-001 (Done), TEST-OVERWRITE-001 (Done)",
+  
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  
+  "context_for_next_testing_agent": "V2.1 merge testing complete. All features working: 2-tab navigation, Today's Moves with persistent action statuses (MongoDB), Evidence drawer, Simulator with 4 levers, light theme. Action status persistence verified with page refresh test. Backend uses simulation engine with deterministic data generation.",
+  
+  "features_verified": {
+    "navigation": "2 items - Mission Control and Simulator",
+    "mission_control": {
+      "hero_kpis": "Health Score gauge, Predicted Run End, Predictability, Output TPD",
+      "progress_bar": "Golden Run Progress with day marker and projection",
+      "output_chart": "Run Plan trajectory with intervention window",
+      "drivers": "Top 5 Drivers section",
+      "fouling": "Fouling & Polymer Build with 3 metrics",
+      "what_changed": "Last 7 days timeline"
+    },
+    "todays_moves": {
+      "action_cards": "3 cards on Day 70 with expand/collapse",
+      "card_content": "Metrics, baseline, assets, why, checklist, expected effect",
+      "buttons": "Acknowledge, Done, Not Feasible",
+      "reason_dialog": "6 reason codes for Not Feasible",
+      "persistence": "Statuses persist in MongoDB across sessions"
+    },
+    "evidence_drawer": {
+      "filters": "6 filter chips (All Events, Polymer/Filters, Temperature, Fouling Risk, Rescue Mode, Prediction Shifts)",
+      "events": "Event cards with severity badges",
+      "shift_logs": "Recent shift logs with flags",
+      "pipeline_status": "Data pipeline status indicators"
+    },
+    "simulator": {
+      "levers": "4 operating levers (Cleaning Cadence, Inhibitor Dose, Flush Frequency, Intervention Discipline)",
+      "results": "Before/After comparison with delta badges",
+      "key_insight": "Dynamic insight based on simulation results"
+    },
+    "theme": "Light theme with bg rgb(248, 250, 252)"
+  }
+}
