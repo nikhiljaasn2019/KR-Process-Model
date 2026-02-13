@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, createContext, useContext } from "react";
+import React, { useState, useEffect, useCallback, createContext } from "react";
 import "@/App.css";
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from "react-router-dom";
 import axios from "axios";
@@ -7,14 +7,12 @@ import {
   Activity, 
   Gauge, 
   FlaskConical,
-  Radio,
   Info
 } from "lucide-react";
 
 // Pages
 import MissionControl from "./pages/MissionControl";
 import Simulator from "./pages/Simulator";
-import Evidence from "./pages/Evidence";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BACKEND_URL}/api`;
@@ -35,15 +33,19 @@ function App() {
   const [whatChanged, setWhatChanged] = useState([]);
   const [loading, setLoading] = useState(true);
   const [quickDays, setQuickDays] = useState([]);
+  const [actionStatuses, setActionStatuses] = useState({});
+  const [events, setEvents] = useState(null);
 
   const fetchData = useCallback(async (day) => {
     try {
-      const [dayRes, runRes, seriesRes, changedRes, quickRes] = await Promise.all([
+      const [dayRes, runRes, seriesRes, changedRes, quickRes, statusesRes, eventsRes] = await Promise.all([
         api.get(`/day/${day}`),
         api.get("/run-info"),
         api.get(`/time-series?start=1&end=${day}`),
         api.get(`/what-changed/${day}`),
-        api.get("/quick-days")
+        api.get("/quick-days"),
+        api.get("/actions/statuses"),
+        api.get("/events")
       ]);
       
       setDayData(dayRes.data);
@@ -51,6 +53,14 @@ function App() {
       setTimeSeries(seriesRes.data.series);
       setWhatChanged(changedRes.data.changes);
       setQuickDays(quickRes.data.days);
+      setEvents(eventsRes.data);
+      
+      // Convert statuses array to map
+      const statusMap = {};
+      statusesRes.data.statuses.forEach(s => {
+        statusMap[s.action_id] = s;
+      });
+      setActionStatuses(statusMap);
     } catch (error) {
       console.error("Error fetching data:", error);
       toast.error("Failed to load data");
@@ -68,6 +78,27 @@ function App() {
     setCurrentDay(day);
   };
 
+  const updateActionStatus = async (actionId, status, reasonCode = null, note = "") => {
+    try {
+      await api.post(`/actions/${actionId}/status`, {
+        status,
+        reason_code: reasonCode,
+        note
+      });
+      
+      // Update local state
+      setActionStatuses(prev => ({
+        ...prev,
+        [actionId]: { action_id: actionId, status, reason_code: reasonCode, note }
+      }));
+      
+      toast.success(`Action marked as ${status}`);
+    } catch (error) {
+      console.error("Error updating action status:", error);
+      toast.error("Failed to update action status");
+    }
+  };
+
   const contextValue = {
     currentDay,
     dayData,
@@ -77,7 +108,10 @@ function App() {
     quickDays,
     loading,
     handleDayChange,
-    fetchData
+    fetchData,
+    actionStatuses,
+    updateActionStatus,
+    events
   };
 
   return (
@@ -90,23 +124,19 @@ function App() {
             <Routes>
               <Route path="/" element={<MissionControl />} />
               <Route path="/simulator" element={<Simulator />} />
-              <Route path="/evidence" element={<Evidence />} />
             </Routes>
           </div>
         </div>
       </BrowserRouter>
-      <Toaster position="top-right" theme="dark" richColors closeButton />
+      <Toaster position="top-right" theme="light" richColors closeButton />
     </AppContext.Provider>
   );
 }
 
 function LeftNav() {
-  const location = useLocation();
-  
   const navItems = [
     { path: "/", label: "Mission Control", icon: Gauge },
     { path: "/simulator", label: "Simulator", icon: FlaskConical },
-    { path: "/evidence", label: "Evidence", icon: Radio },
   ];
 
   return (
