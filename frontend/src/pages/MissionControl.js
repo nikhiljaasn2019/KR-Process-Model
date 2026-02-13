@@ -1,18 +1,25 @@
-import React, { useContext, useMemo } from "react";
+import React, { useContext, useState } from "react";
 import { AppContext } from "../App";
 import { 
   TrendingUp, 
-  TrendingDown, 
   Target, 
-  Calendar,
   AlertTriangle,
   CheckCircle,
   Activity,
-  Gauge,
-  Filter,
   Beaker,
   Clock,
-  ChevronRight
+  ChevronRight,
+  ChevronDown,
+  X,
+  Radio,
+  Filter,
+  ThermometerSun,
+  FileText,
+  Database,
+  AlertCircle,
+  Check,
+  XCircle,
+  Eye
 } from "lucide-react";
 import {
   LineChart,
@@ -36,8 +43,13 @@ export default function MissionControl() {
     whatChanged,
     quickDays,
     loading, 
-    handleDayChange 
+    handleDayChange,
+    actionStatuses,
+    updateActionStatus,
+    events
   } = useContext(AppContext);
+
+  const [evidenceDrawerOpen, setEvidenceDrawerOpen] = useState(false);
 
   if (loading || !dayData) {
     return (
@@ -60,6 +72,7 @@ export default function MissionControl() {
           dayData={dayData}
           quickDays={quickDays}
           onDayChange={handleDayChange}
+          onOpenEvidence={() => setEvidenceDrawerOpen(true)}
         />
 
         {/* Hero KPI Tiles */}
@@ -87,12 +100,25 @@ export default function MissionControl() {
       </div>
 
       {/* Right Rail - Today's Moves */}
-      <RightRail actions={dayData.actions || []} currentDay={currentDay} />
+      <RightRail 
+        actions={dayData.actions || []} 
+        currentDay={currentDay}
+        actionStatuses={actionStatuses}
+        updateActionStatus={updateActionStatus}
+      />
+
+      {/* Evidence Drawer */}
+      {evidenceDrawerOpen && (
+        <EvidenceDrawer 
+          events={events}
+          onClose={() => setEvidenceDrawerOpen(false)}
+        />
+      )}
     </div>
   );
 }
 
-function DayControls({ currentDay, dayData, quickDays, onDayChange }) {
+function DayControls({ currentDay, dayData, quickDays, onDayChange, onOpenEvidence }) {
   return (
     <div className="day-controls" data-testid="day-controls">
       <div>
@@ -125,6 +151,15 @@ function DayControls({ currentDay, dayData, quickDays, onDayChange }) {
           </button>
         ))}
       </div>
+
+      <button 
+        className="evidence-btn"
+        onClick={onOpenEvidence}
+        data-testid="open-evidence-btn"
+      >
+        <Radio size={16} />
+        Evidence
+      </button>
     </div>
   );
 }
@@ -171,10 +206,7 @@ function HeroSection({ dayData }) {
       <div className="hero-tile">
         <div className="hero-tile-header">
           <span className="hero-tile-label">Predicted Run End</span>
-          <span className="hero-tile-badge" style={{ 
-            background: "rgba(59, 130, 246, 0.2)", 
-            color: "#3B82F6" 
-          }}>
+          <span className="hero-tile-badge blue">
             ±{dayData.prediction_ci_90pct_days}d CI
           </span>
         </div>
@@ -184,7 +216,7 @@ function HeroSection({ dayData }) {
         <div className="hero-tile-sub">
           {dayData.predicted_end_date_early} – {dayData.predicted_end_date_late}
         </div>
-        <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: "#94A3B8" }}>
+        <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
           {dayData.predicted_remaining_days} days remaining
         </div>
       </div>
@@ -193,13 +225,7 @@ function HeroSection({ dayData }) {
       <div className="hero-tile">
         <div className="hero-tile-header">
           <span className="hero-tile-label">Predictability</span>
-          <span className="hero-tile-badge" style={{ 
-            background: dayData.predictability_score === "High" ? "rgba(16, 185, 129, 0.2)" :
-                       dayData.predictability_score === "Medium" ? "rgba(245, 158, 11, 0.2)" :
-                       "rgba(239, 68, 68, 0.2)",
-            color: dayData.predictability_score === "High" ? "#10B981" :
-                   dayData.predictability_score === "Medium" ? "#F59E0B" : "#EF4444"
-          }}>
+          <span className={`hero-tile-badge ${dayData.predictability_score === "High" ? "green" : dayData.predictability_score === "Medium" ? "yellow" : "red"}`}>
             {dayData.predictability_score}
           </span>
         </div>
@@ -230,15 +256,9 @@ function HeroSection({ dayData }) {
         <div className="hero-tile-sub">
           Band: {dayData.eaa_output_band_min}–{dayData.eaa_output_band_max} TPD
         </div>
-        <div style={{ 
-          marginTop: "0.75rem", 
-          padding: "0.5rem 0.75rem", 
-          background: "rgba(59, 130, 246, 0.1)", 
-          borderRadius: "6px",
-          fontSize: "0.75rem"
-        }}>
-          <div style={{ color: "#94A3B8" }}>Expected Total Till End</div>
-          <div style={{ fontWeight: 700, color: "#F8FAFC", fontSize: "1rem" }}>
+        <div className="output-total-box">
+          <div style={{ color: "var(--text-muted)" }}>Expected Total Till End</div>
+          <div style={{ fontWeight: 700, color: "var(--text-primary)", fontSize: "1rem" }}>
             {dayData.expected_total_output_tons?.toLocaleString()} tons
           </div>
         </div>
@@ -298,11 +318,10 @@ function RunPlanSection({ timeSeries, currentDay, dayData }) {
   const chartData = timeSeries.map(d => ({
     day: d.day,
     output: Math.round(d.eaa_output_tpd),
-    cumulative: Math.round(d.cumulative_output_tons / 1000), // In thousands
+    cumulative: Math.round(d.cumulative_output_tons / 1000),
     health: d.run_health_score
   }));
 
-  // Forecast data (simple projection)
   const forecastData = [];
   const lastOutput = dayData.eaa_output_tpd;
   for (let i = 1; i <= dayData.predicted_remaining_days && currentDay + i <= 111; i++) {
@@ -336,23 +355,24 @@ function RunPlanSection({ timeSeries, currentDay, dayData }) {
                 <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2A3548" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
             <XAxis 
               dataKey="day" 
               tick={{ fontSize: 10, fill: "#64748B" }}
-              axisLine={{ stroke: "#2A3548" }}
+              axisLine={{ stroke: "#E2E8F0" }}
             />
             <YAxis 
               tick={{ fontSize: 10, fill: "#64748B" }}
-              axisLine={{ stroke: "#2A3548" }}
+              axisLine={{ stroke: "#E2E8F0" }}
               domain={[280, 380]}
             />
             <Tooltip 
               contentStyle={{ 
-                background: "#1A2234", 
-                border: "1px solid #2A3548",
+                background: "#FFFFFF", 
+                border: "1px solid #E2E8F0",
                 borderRadius: 8,
-                fontSize: 12
+                fontSize: 12,
+                boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)"
               }}
               formatter={(value, name) => [value, name === "output" ? "Output (TPD)" : name]}
             />
@@ -363,7 +383,7 @@ function RunPlanSection({ timeSeries, currentDay, dayData }) {
               strokeWidth={2}
               fill="url(#outputGradient)"
             />
-            <ReferenceLine x={currentDay} stroke="#F8FAFC" strokeDasharray="5 5" />
+            <ReferenceLine x={currentDay} stroke="#1E293B" strokeDasharray="5 5" />
             {showIntervention && (
               <ReferenceLine 
                 x={interventionStart} 
@@ -403,7 +423,7 @@ function DriversSection({ drivers }) {
             Top 5 Drivers
           </span>
         </div>
-        <div style={{ padding: "2rem", textAlign: "center", color: "#64748B" }}>
+        <div style={{ padding: "2rem", textAlign: "center", color: "var(--text-muted)" }}>
           <CheckCircle size={24} style={{ color: "#10B981", marginBottom: "0.5rem" }} />
           <div>All metrics within baseline bands</div>
         </div>
@@ -472,13 +492,13 @@ function FoulingSection({ dayData, timeSeries }) {
           <div className="fouling-metric-label">Polymer Build Index (0-100)</div>
         </div>
         <div className="fouling-metric">
-          <div className="fouling-metric-value" style={{ color: "#F8FAFC" }}>
+          <div className="fouling-metric-value">
             {Math.round(dayData.polymer_burden_kg_per_day)}
           </div>
           <div className="fouling-metric-label">Polymer Burden (kg/day)</div>
         </div>
         <div className="fouling-metric">
-          <div className="fouling-metric-value" style={{ color: "#F8FAFC" }}>
+          <div className="fouling-metric-value">
             {dayData.filter_change_count_per_day.toFixed(1)}
           </div>
           <div className="fouling-metric-label">Filter Changes (/day)</div>
@@ -489,11 +509,11 @@ function FoulingSection({ dayData, timeSeries }) {
       <div style={{ height: 100, marginTop: "1rem" }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={timeSeries.slice(-14)} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2A3548" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
             <XAxis dataKey="day" tick={{ fontSize: 9, fill: "#64748B" }} axisLine={false} />
             <YAxis tick={{ fontSize: 9, fill: "#64748B" }} axisLine={false} />
             <Tooltip 
-              contentStyle={{ background: "#1A2234", border: "1px solid #2A3548", fontSize: 11 }}
+              contentStyle={{ background: "#FFFFFF", border: "1px solid #E2E8F0", fontSize: 11 }}
             />
             <Line type="monotone" dataKey="polymer_burden_kg_per_day" stroke="#F59E0B" strokeWidth={2} dot={false} name="Polymer (kg/d)" />
           </LineChart>
@@ -520,7 +540,7 @@ function WhatChangedSection({ changes }) {
           >
             <div className="timeline-day">
               Day {change.day}
-              <div style={{ fontSize: "0.5625rem", color: "#64748B" }}>{change.date}</div>
+              <div style={{ fontSize: "0.5625rem", color: "var(--text-muted)" }}>{change.date}</div>
             </div>
             <div className="timeline-content">
               <div className="timeline-metrics">
@@ -543,14 +563,7 @@ function WhatChangedSection({ changes }) {
                 </div>
               </div>
               {change.has_event && change.events.map((evt, i) => (
-                <div key={i} style={{ 
-                  marginTop: "0.5rem", 
-                  padding: "0.375rem 0.5rem",
-                  background: "#242E42",
-                  borderRadius: "4px",
-                  fontSize: "0.6875rem",
-                  color: "#F59E0B"
-                }}>
+                <div key={i} className="timeline-event-note">
                   <strong>{evt.type}</strong>: {evt.operator_note?.slice(0, 60)}...
                 </div>
               ))}
@@ -562,17 +575,37 @@ function WhatChangedSection({ changes }) {
   );
 }
 
-function RightRail({ actions, currentDay }) {
+function RightRail({ actions, currentDay, actionStatuses, updateActionStatus }) {
+  // Calculate completion stats
+  const completedCount = actions.filter(a => 
+    actionStatuses[a.id]?.status === "Done"
+  ).length;
+  const acknowledgedCount = actions.filter(a => 
+    actionStatuses[a.id]?.status === "Acknowledged"
+  ).length;
+
   return (
     <div className="right-rail">
       <div className="moves-panel" data-testid="moves-panel">
         <div className="moves-header">
-          <span className="moves-title">Today's 3 Moves</span>
+          <div>
+            <span className="moves-title">Today's Moves</span>
+            <div className="moves-subtitle">
+              {completedCount}/{actions.length} done • {acknowledgedCount} acknowledged
+            </div>
+          </div>
           <span className="moves-count">{actions.length}</span>
         </div>
         <div className="moves-list">
           {actions.map((action, idx) => (
-            <ActionCard key={action.id} action={action} priority={idx + 1} />
+            <ActionCard 
+              key={action.id} 
+              action={action} 
+              priority={idx + 1}
+              status={actionStatuses[action.id]?.status || "New"}
+              reasonCode={actionStatuses[action.id]?.reason_code}
+              onUpdateStatus={updateActionStatus}
+            />
           ))}
         </div>
       </div>
@@ -580,24 +613,67 @@ function RightRail({ actions, currentDay }) {
   );
 }
 
-function ActionCard({ action, priority }) {
-  const [expanded, setExpanded] = React.useState(priority === 1);
+function ActionCard({ action, priority, status, reasonCode, onUpdateStatus }) {
+  const [expanded, setExpanded] = useState(priority === 1 && status === "New");
+  const [showReasonDialog, setShowReasonDialog] = useState(false);
   
+  const statusConfig = {
+    "New": { bg: "var(--bg-card)", border: "var(--border)", icon: null },
+    "Acknowledged": { bg: "#FEF3C7", border: "#F59E0B", icon: <Eye size={14} color="#F59E0B" /> },
+    "Done": { bg: "#D1FAE5", border: "#10B981", icon: <Check size={14} color="#10B981" /> },
+    "Not Feasible": { bg: "#FEE2E2", border: "#EF4444", icon: <XCircle size={14} color="#EF4444" /> }
+  };
+
+  const currentConfig = statusConfig[status] || statusConfig["New"];
+
+  const reasonCodes = [
+    { code: "UTILITY_CONSTRAINT", label: "Utility constraint" },
+    { code: "EQUIPMENT_ISSUE", label: "Equipment not available" },
+    { code: "PERSONNEL_UNAVAILABLE", label: "Personnel unavailable" },
+    { code: "ALREADY_ADDRESSED", label: "Already addressed by previous shift" },
+    { code: "OUT_OF_SCOPE", label: "Out of scope for this run phase" },
+    { code: "OTHER", label: "Other (see note)" }
+  ];
+  
+  const handleNotFeasible = (code) => {
+    onUpdateStatus(action.id, "Not Feasible", code);
+    setShowReasonDialog(false);
+  };
+
   return (
-    <div className="move-card" data-testid={`move-card-${action.id}`}>
+    <div 
+      className="move-card" 
+      data-testid={`move-card-${action.id}`}
+      style={{ 
+        background: currentConfig.bg,
+        borderColor: currentConfig.border
+      }}
+    >
       <div className="move-card-header" onClick={() => setExpanded(!expanded)} style={{ cursor: "pointer" }}>
-        <div className="move-priority">{priority}</div>
+        <div className="move-priority" style={{ 
+          background: status === "Done" ? "#10B981" : status === "Not Feasible" ? "#9CA3AF" : "var(--accent-blue)"
+        }}>
+          {status === "Done" ? <Check size={14} /> : priority}
+        </div>
         <div className="move-title-section">
-          <div className="move-title">{action.title}</div>
+          <div className="move-title" style={{ 
+            textDecoration: status === "Done" || status === "Not Feasible" ? "line-through" : "none",
+            opacity: status === "Done" || status === "Not Feasible" ? 0.7 : 1
+          }}>
+            {action.title}
+          </div>
           <div className="move-trigger">
             {action.metric} • {action.time_window}
+            {status !== "New" && (
+              <span className="status-badge" style={{ marginLeft: "0.5rem" }}>
+                {currentConfig.icon}
+                {status}
+                {reasonCode && ` (${reasonCode.replace(/_/g, " ").toLowerCase()})`}
+              </span>
+            )}
           </div>
         </div>
-        <ChevronRight size={16} style={{ 
-          color: "#64748B", 
-          transform: expanded ? "rotate(90deg)" : "none",
-          transition: "transform 0.2s"
-        }} />
+        {expanded ? <ChevronDown size={16} color="var(--text-muted)" /> : <ChevronRight size={16} color="var(--text-muted)" />}
       </div>
       
       {expanded && (
@@ -618,15 +694,8 @@ function ActionCard({ action, priority }) {
               </span>
             </div>
             
-            <div style={{ 
-              margin: "0.75rem 0", 
-              padding: "0.5rem 0.625rem",
-              background: "#242E42",
-              borderRadius: "6px",
-              fontSize: "0.6875rem",
-              color: "#94A3B8"
-            }}>
-              <strong style={{ color: "#F8FAFC" }}>Why:</strong> {action.why}
+            <div className="move-why-box">
+              <strong style={{ color: "var(--text-primary)" }}>Why:</strong> {action.why}
             </div>
             
             <div className="move-checklist">
@@ -647,13 +716,208 @@ function ActionCard({ action, priority }) {
             </div>
           </div>
           
-          <div className="move-card-footer">
-            <button className="move-btn">Acknowledge</button>
-            <button className="move-btn primary">Done</button>
-            <button className="move-btn">Not Feasible</button>
-          </div>
+          {status === "New" && (
+            <div className="move-card-footer">
+              <button 
+                className="move-btn"
+                onClick={() => onUpdateStatus(action.id, "Acknowledged")}
+                data-testid={`acknowledge-${action.id}`}
+              >
+                <Eye size={14} />
+                Acknowledge
+              </button>
+              <button 
+                className="move-btn primary"
+                onClick={() => onUpdateStatus(action.id, "Done")}
+                data-testid={`done-${action.id}`}
+              >
+                <Check size={14} />
+                Done
+              </button>
+              <button 
+                className="move-btn danger"
+                onClick={() => setShowReasonDialog(true)}
+                data-testid={`not-feasible-${action.id}`}
+              >
+                <XCircle size={14} />
+                Not Feasible
+              </button>
+            </div>
+          )}
+
+          {status === "Acknowledged" && (
+            <div className="move-card-footer">
+              <button 
+                className="move-btn primary"
+                onClick={() => onUpdateStatus(action.id, "Done")}
+              >
+                <Check size={14} />
+                Mark Done
+              </button>
+              <button 
+                className="move-btn danger"
+                onClick={() => setShowReasonDialog(true)}
+              >
+                <XCircle size={14} />
+                Not Feasible
+              </button>
+            </div>
+          )}
         </>
       )}
+
+      {/* Reason Code Dialog */}
+      {showReasonDialog && (
+        <div className="reason-dialog-overlay" onClick={() => setShowReasonDialog(false)}>
+          <div className="reason-dialog" onClick={e => e.stopPropagation()}>
+            <div className="reason-dialog-header">
+              <span>Select Reason</span>
+              <button onClick={() => setShowReasonDialog(false)} className="reason-dialog-close">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="reason-dialog-body">
+              {reasonCodes.map(rc => (
+                <button
+                  key={rc.code}
+                  className="reason-option"
+                  onClick={() => handleNotFeasible(rc.code)}
+                >
+                  {rc.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EvidenceDrawer({ events, onClose }) {
+  const [activeFilter, setActiveFilter] = useState("all");
+
+  if (!events) return null;
+
+  const filterOptions = [
+    { id: "all", label: "All Events" },
+    { id: "FILTER_CLEANING_SPIKE", label: "Polymer/Filters" },
+    { id: "TEMP_EXCURSION", label: "Temperature" },
+    { id: "FOULING_RISK_CLUSTER", label: "Fouling Risk" },
+    { id: "RUN_RESCUE_MODE", label: "Rescue Mode" },
+    { id: "PREDICTED_END_SHIFT", label: "Prediction Shifts" }
+  ];
+
+  const filteredEvents = activeFilter === "all" 
+    ? events.events 
+    : events.events.filter(e => e.type === activeFilter);
+
+  const getEventIcon = (type) => {
+    switch (type) {
+      case "FILTER_CLEANING_SPIKE": return <Filter size={14} />;
+      case "TEMP_EXCURSION": return <ThermometerSun size={14} />;
+      case "FOULING_RISK_CLUSTER": return <AlertTriangle size={14} />;
+      case "RUN_RESCUE_MODE": return <Activity size={14} />;
+      case "PREDICTED_END_SHIFT": return <Clock size={14} />;
+      default: return <AlertCircle size={14} />;
+    }
+  };
+
+  return (
+    <div className="evidence-drawer-overlay" onClick={onClose}>
+      <div className="evidence-drawer" onClick={e => e.stopPropagation()} data-testid="evidence-drawer">
+        <div className="evidence-drawer-header">
+          <div className="section-title">
+            <Radio size={18} />
+            Evidence & Event Timeline
+          </div>
+          <button className="drawer-close-btn" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="evidence-drawer-content">
+          {/* Filters */}
+          <div className="evidence-filters">
+            {filterOptions.map((opt) => (
+              <button
+                key={opt.id}
+                className={`filter-chip ${activeFilter === opt.id ? "active" : ""}`}
+                onClick={() => setActiveFilter(opt.id)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Event List */}
+          <div className="evidence-events-list">
+            {filteredEvents.length > 0 ? (
+              filteredEvents.map((event, idx) => (
+                <div key={idx} className="evidence-event-card">
+                  <div className="evidence-event-header">
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      {getEventIcon(event.type)}
+                      <span className="evidence-event-type">{event.type.replace(/_/g, " ")}</span>
+                    </div>
+                    <span className={`evidence-event-severity ${event.severity}`}>
+                      {event.severity.toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="evidence-event-day">Day {event.day}</div>
+                  <div className="evidence-event-assets">
+                    {event.asset_tags?.map((tag, i) => (
+                      <span key={i} className="evidence-asset-tag">{tag}</span>
+                    ))}
+                  </div>
+                  <div className="evidence-event-note">"{event.operator_note}"</div>
+                </div>
+              ))
+            ) : (
+              <div style={{ textAlign: "center", padding: "2rem", color: "var(--text-muted)" }}>
+                No events matching filter
+              </div>
+            )}
+          </div>
+
+          {/* Sidebar Info */}
+          <div className="evidence-sidebar-section">
+            <h4><FileText size={14} /> Recent Shift Logs</h4>
+            {events.shift_logs.slice(0, 2).map((log, idx) => (
+              <div key={idx} className="evidence-shift-log">
+                <div className="evidence-shift-header">
+                  <span>Day {log.day} - Shift {log.shift}</span>
+                  <div style={{ display: "flex", gap: "0.25rem" }}>
+                    {log.flags?.map((flag, i) => (
+                      <span key={i} className={`evidence-flag ${flag === "HIGH_RISK" ? "high" : ""}`}>
+                        {flag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="evidence-shift-summary">{log.summary}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="evidence-sidebar-section">
+            <h4><Database size={14} /> Data Pipeline Status</h4>
+            {events.pipeline_status.map((pipe, idx) => (
+              <div key={idx} className="evidence-pipeline-item">
+                <span>{pipe.source.replace(/_/g, " ")}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span style={{ fontSize: "0.625rem", color: "var(--text-muted)" }}>
+                    {pipe.last_seen_hours_ago}h ago
+                  </span>
+                  <span className={`evidence-pipeline-status ${pipe.status.toLowerCase()}`}>
+                    {pipe.status}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
