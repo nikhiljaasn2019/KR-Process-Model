@@ -1,0 +1,135 @@
+{
+  "summary": "Decision Instrument upgrade testing complete. All 37 backend tests passed. All 14 frontend tests passed. Key features verified: Default Day 70 landing, Quick jump buttons (7,30,52,70,96,110), Golden Gap tile with on-track/behind status, Commitment View with P90/P50/P10 outputs, Scenario toggle (Do Nothing vs Execute Moves) with side-by-side comparison, Action cards with Protects/Trigger/Deviation/Assets/Checklist/Expected Effect/Impact on Done, Marking action Done immediately updates metrics, Output trajectory chart with event markers, Simulator produces meaningful deltas.",
+  
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Charts",
+        "issues": ["Console warnings about chart width/height being -1 on initial load - cosmetic only, charts render correctly after data loads"]
+      }
+    ]
+  },
+  
+  "passed_tests": [
+    "Backend: Root endpoint returns operational status (v2.0)",
+    "Backend: Run info returns golden run metadata (111 days target)",
+    "Backend: Day data endpoints (1, 30, 70, 110) return correct metrics",
+    "Backend: Day boundary clamping works (0→1, 200→111)",
+    "Backend: Time series returns 111 days of data",
+    "Backend: What-changed returns 7 days of changes",
+    "Backend: Events endpoint returns events, shift logs, lab results, pipeline status",
+    "Backend: Quick days returns 6 jump options (7, 30, 52, 70, 96, 110)",
+    "Backend: Simulator baseline and aggressive scenarios work",
+    "Backend: Action status CRUD - Acknowledge, Done, Not Feasible with reason codes",
+    "Backend: Action status persistence in MongoDB verified",
+    "Backend: Intervention window endpoint works",
+    "Backend: Scenario comparison endpoint returns do_nothing vs execute_moves",
+    "Backend: Scenario comparison calculates golden gap correctly (vs 111 days)",
+    "Backend: Apply action impact endpoint updates metrics",
+    "Backend: Apply action impact updates golden gap",
+    "Backend: Day data has P10/P50/P90 output projections",
+    "Backend: Day data has golden gap fields",
+    "Backend: Actions have urgency levels (critical/high/medium/routine)",
+    "Backend: Actions have protects field (Run Length/Productivity/Both)",
+    "Backend: Actions have trigger with deviation percentage",
+    "Backend: Actions have impact_on_done for immediate metric updates",
+    "Frontend: Default landing day is Day 70",
+    "Frontend: Quick jump buttons show 7, 30, 52, 70, 96, 110",
+    "Frontend: Golden Gap tile visible with +4 days vs Golden",
+    "Frontend: Commitment View shows P90 Committed, P50 Expected, P10 Upside",
+    "Frontend: Scenario toggle visible with 'Do Nothing' and 'Execute Moves' buttons",
+    "Frontend: Switching to Execute Moves updates Golden Gap from +4 to +18",
+    "Frontend: Simulated badge appears when Execute Moves selected",
+    "Frontend: Today's Moves panel shows 3 action cards on Day 70",
+    "Frontend: Action cards have CRITICAL/HIGH urgency badges",
+    "Frontend: Action cards show Protects, Trigger section, Expected Effect",
+    "Frontend: Marking action Done shows impact bar (+6 days, +3 health)",
+    "Frontend: Quick day navigation works (Day 52, Day 96)",
+    "Frontend: Simulator page loads with 4 operating levers",
+    "Frontend: Simulator produces meaningful deltas (+3.1 health, +1d, +6 TPD, +381t)",
+    "Frontend: Evidence drawer opens with 6 filter chips, 6 event cards",
+    "Frontend: Evidence drawer shows shift logs and pipeline status",
+    "Frontend: Output trajectory chart has event markers legend",
+    "Frontend: All 11 main sections visible (day-controls, scenario-toggle, golden-gap, commitment-view, hero-section, progress-section, run-plan, drivers-section, fouling-section, what-changed, moves-panel)"
+  ],
+  
+  "test_report_links": [
+    "/app/backend/tests/test_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  
+  "action_items": [],
+  
+  "critical_code_review_comments": [],
+  
+  "updated_files": [
+    "/app/backend/tests/test_api.py"
+  ],
+  
+  "success_rate": {
+    "backend": "100% (37/37 tests passed)",
+    "frontend": "100% (14/14 tests passed)"
+  },
+  
+  "seed_data_creation": "Test action statuses created: TEST-ACT-001 (Acknowledged), TEST-ACT-002 (Done), TEST-ACT-003 (Not Feasible), TEST-PERSIST-001 (Done), TEST-OVERWRITE-001 (Done), ACT-070-01 (Done), ACT-070-02 (Done)",
+  
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  
+  "context_for_next_testing_agent": "Decision Instrument V2.2 testing complete. All features working: Default Day 70 landing, Quick jump buttons (7,30,52,70,96,110), Golden Gap tile showing gap to 111 days, Commitment View with P90/P50/P10 outputs and Shutdown Window, Scenario toggle (Do Nothing vs Execute Moves) with side-by-side comparison, Action cards with full details (Protects, Trigger with deviation, Assets, Checklist, Expected Effect, Impact on Done), Marking action Done immediately updates metrics via /api/apply-action-impact endpoint, Output trajectory chart with event markers, Simulator with 4 levers producing meaningful deltas. Backend uses simulation engine with deterministic data generation.",
+  
+  "features_verified": {
+    "decision_instrument": {
+      "default_day": "Day 70 (critical moment)",
+      "quick_days": "7, 30, 52, 70, 96, 110",
+      "golden_gap": {
+        "target": "111 days",
+        "shows_gap": "+4 days on Day 70",
+        "status": "On track to beat Golden / Behind Golden target"
+      },
+      "commitment_view": {
+        "p90_committed": "33,820 tons",
+        "p50_expected": "35,800 tons",
+        "p10_upside": "37,032 tons",
+        "shutdown_window": "2025-03-22 → 2025-03-27"
+      },
+      "scenario_toggle": {
+        "do_nothing": "Current trajectory",
+        "execute_moves": "With action impacts (+14d delta shown)",
+        "updates": "Golden Gap, Commitment View, KPI tiles all update"
+      }
+    },
+    "action_cards": {
+      "urgency_levels": "CRITICAL, HIGH, MEDIUM, ROUTINE",
+      "protects": "Run Length, Productivity, Both",
+      "trigger": "Metric, Current, Baseline, Band, Deviation, Time Window",
+      "assets": "G8, G9, V-014, V-022, E-015",
+      "checklist": "Numbered action items",
+      "expected_effect": "Run Length, Polymer Slope, Confidence",
+      "impact_on_done": "remaining_days_delta, health_score_delta, polymer_reduction_pct, ci_tightening_days"
+    },
+    "simulator": {
+      "levers": "Cleaning Cadence, Inhibitor Dose Index, Flush Frequency, Intervention Discipline",
+      "results": "Before/After comparison with delta badges",
+      "key_insight": "Dynamic insight based on simulation results"
+    },
+    "evidence_drawer": {
+      "filters": "All Events, Polymer/Filters, Temperature, Fouling Risk, Rescue Mode, Prediction Shifts",
+      "events": "Event cards with severity badges",
+      "shift_logs": "Recent shift logs with flags",
+      "pipeline_status": "Data pipeline status indicators"
+    },
+    "output_trajectory": {
+      "chart": "Output (TPD) and Polymer (kg/day) dual axis",
+      "event_markers": "Reference lines for events",
+      "legend": "Event markers legend showing recent events"
+    }
+  }
+}
