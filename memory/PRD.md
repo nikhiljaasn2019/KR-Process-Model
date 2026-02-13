@@ -1,86 +1,76 @@
 # KR AA Run Health OS - Product Requirements Document
 
+## Version 2.0 - Complete Rebuild (Jan 2026)
+
 ## Original Problem Statement
-Build an interactive "Conviction Prototype" web app demo for BPCL Kochi Refinery (KR) Acrylic Acid (AA) unit to help executives consistently reach/beat golden run-length and protect productivity.
+Build a conviction prototype for BPCL Kochi Refinery Acrylic Acid unit that makes the ED + operators feel: "We desperately need this to achieve long AND predictable runs (>= golden run) and to plan output + shutdowns."
 
 ## User Personas
-- **Executive Director (ED)**: Decision maker who needs quick visibility into run health and risks
-- **Plant Managers**: Operations leaders who need actionable insights and specific recommendations
-- **Process Engineers**: Technical users who need detailed metric comparisons and trends
+- **Executive Director (ED)**: Needs high-level visibility into run health, predictability, and planning
+- **Plant Operators**: Need specific, actionable guidance with asset tags and checklists
+- **Process Engineers**: Need evidence and data to support decisions
 
-## Core Requirements (Static)
-1. 5-screen application: Mission Control, Action Center, What Changed, Golden Comparator, Data Feed
-2. Golden baseline of 111 days (02-Dec-2024 to 23-Mar-2025)
-3. Manual demo controls for live presentations
-4. Specific, non-vague insights with exact metrics, bands, and checklists
-5. Light professional theme (executive-friendly)
+## Architecture
 
-## What's Been Implemented (Jan 2026)
-- ✅ Mission Control dashboard with KPI cards, progress bar, risk percentages
-- ✅ Action Center with full action card schema (triggers, evidence, checklists)
-- ✅ What Changed timeline with metrics trend chart (Recharts)
-- ✅ Golden Comparator with comparison table and run history
-- ✅ Data Feed & Freshness with confidence indicators
-- ✅ Demo Controls Panel (advance time, inject events, resolve actions)
-- ✅ 7 core metrics tracking: CW Inlet Temp, Inhibitor Continuity, ΔP Index, Reactor Oscillation, AA Dimer, MeHQ, Excursions
-- ✅ Editable config file: /config/golden_bands.json
-- ✅ 10 historical runs + current live run simulation
+### Data Files (Static)
+- `/data/sim/run_seed.json` - Anchor points for 6 key days (1, 7, 18, 30, 70, 110)
+- `/data/sim/ops_events.json` - Operational events, shift logs, lab results, pipeline status
 
-## Tech Stack
-- Frontend: React 19 with Recharts, Tailwind CSS, Shadcn/UI
-- Backend: FastAPI (Python)
-- Database: MongoDB (for future persistence)
-- Fonts: Manrope (headings), Inter (body), JetBrains Mono (data)
+### Simulation Engine
+- Piecewise linear interpolation between anchor points
+- Deterministic jitter (seed=42, max 2.5%)
+- Event overrides/spikes from ops_events.json
+- Correlation rules: polymer↑ → filter changes↑ → output↓
 
-## Prioritized Backlog
+## Navigation (3 Items Only)
+1. **Mission Control** - The cockpit (default)
+2. **Simulator** - What-if scenarios
+3. **Evidence** - Event timeline, shift logs, data pipeline
 
-### P0 (Critical) - DONE
-- [x] All 5 screens implemented
-- [x] Demo controls functional
-- [x] Action card generation from deviations
-- [x] Golden baseline comparison
+## Key Features Implemented
 
-### P1 (High Priority) - Future
-- [ ] PDF/Print export of Mission Control snapshot
-- [ ] Guided demo walkthrough overlay
-- [ ] Configurable thresholds via admin panel
+### Mission Control (Cockpit)
+- Global status strip (Feed: Healthy/Delayed/Interrupted)
+- Day slider (1-111) + quick jump buttons (Day 1, 7, 18, 30, 70, 110)
+- 4 Hero KPI tiles:
+  - Run Health Score (0-100 gauge)
+  - Predicted Run End (date + CI)
+  - Predictability (Low/Med/High + visual)
+  - Output Today (TPD + cumulative)
+- Golden Progress Bar with projection overlay
+- Run Plan: Output trajectory chart with intervention window
+- Top 5 Drivers with sparklines
+- Fouling & Polymer Build metrics
+- What Changed mini timeline (last 7 days)
+- Today's 3 Moves (sticky right rail)
 
-### P2 (Medium Priority) - Future
-- [ ] Historical trend analysis across multiple runs
-- [ ] Predictive analytics for early warning
-- [ ] Mobile-responsive enhancements
+### Simulator
+- 4 Operating Levers:
+  - Cleaning cadence (baseline/+1/+2)
+  - Inhibitor dose index (0.9-1.3)
+  - Flush frequency (baseline/+1)
+  - Intervention discipline (low/med/high)
+- Before vs After comparison with delta indicators
+- Simulated end date and total output projections
 
-## Next Tasks
-1. Consider adding PDF export for executive reporting
-2. Add more sophisticated projection models
-3. Implement data persistence with MongoDB
-4. Add user preferences/settings
+### Evidence
+- Event timeline with filters (Polymer/Filters, Temperature, Fouling Risk, Rescue Mode, Prediction Shifts)
+- Shift logs with flags (WATCH, HIGH_RISK)
+- Lab results
+- Data Pipeline status (OK/LATE/BROKEN)
 
----
-## Update: Day Scenario Selector Feature (Jan 2026)
+## Testing Results
+- Backend: 100% success rate
+- Frontend: 95% success rate
+- All 6 day scenarios tested (1, 7, 18, 30, 70, 110)
 
-### New Features Added:
-1. **Day Selector Dropdown** on Mission Control page
-   - 7 predefined day scenarios: 1, 18, 35, 55, 70, 90, 105
-   - Color-coded risk levels: Low (green), Medium (amber), High (red), Critical (dark red)
-   - Toast notifications with descriptions when switching
+## Next Action Items
+1. Add "Not Feasible" reason codes dialog (Utility constraint, Equipment issue, etc.)
+2. Implement action status persistence (Done/Acknowledged logging)
+3. Add prediction shift tracking over time
+4. Consider adding shift handover report export
 
-2. **Progressive Scenario System**
-   - Day 1: Fresh start - all metrics optimal, 0 actions, 5-15% risk
-   - Day 18: Early run - minor fluctuations, low risk
-   - Day 35: Mid run - attention needed, medium risk
-   - Day 55: Late-mid run - multiple parameters trending
-   - Day 70: Late run - active intervention required, high risk
-   - Day 90: Critical phase - maximum vigilance, high risk
-   - Day 105: Final stretch - all hands on deck, critical risk
-
-3. **Action Card Impact Section**
-   - Risk reduction percentages (7-day, 14-day, 30-day)
-   - Productivity impact explanation
-   - Run length impact explanation
-   - Urgency badges (Critical/High/Medium)
-   - Confidence level indicator
-
-### API Endpoints Added:
-- GET /api/demo/available-days - List of day scenarios
-- POST /api/demo/set-day - Switch to specific day scenario
+## Files Reference
+- Backend: `/app/backend/server.py`
+- Data: `/app/data/sim/run_seed.json`, `/app/data/sim/ops_events.json`
+- Frontend: `/app/frontend/src/pages/MissionControl.js`, `Simulator.js`, `Evidence.js`
