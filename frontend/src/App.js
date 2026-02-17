@@ -1,18 +1,20 @@
 import React, { useState, useEffect, useCallback, createContext } from "react";
 import "@/App.css";
-import { BrowserRouter, Routes, Route, NavLink, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import axios from "axios";
 import { Toaster, toast } from "sonner";
 import { 
   Activity, 
   Gauge, 
-  FlaskConical,
+  ClipboardList,
+  Target,
   Info
 } from "lucide-react";
 
 // Pages
 import MissionControl from "./pages/MissionControl";
-import Simulator from "./pages/Simulator";
+import ActionsRequired from "./pages/ActionsRequired";
+import PlanCommit from "./pages/PlanCommit";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BACKEND_URL}/api`;
@@ -30,20 +32,22 @@ function App() {
   const [dayData, setDayData] = useState(null);
   const [runInfo, setRunInfo] = useState(null);
   const [timeSeries, setTimeSeries] = useState([]);
+  const [fullSeries, setFullSeries] = useState([]); // Full 1-111 series for charts
   const [whatChanged, setWhatChanged] = useState([]);
   const [loading, setLoading] = useState(true);
   const [quickDays, setQuickDays] = useState([]);
   const [actionStatuses, setActionStatuses] = useState({});
   const [events, setEvents] = useState(null);
   const [scenarioComparison, setScenarioComparison] = useState(null);
-  const [scenarioMode, setScenarioMode] = useState("do_nothing"); // "do_nothing" or "execute_moves"
+  const [outcomeDelta, setOutcomeDelta] = useState(null); // Track action impact
 
   const fetchData = useCallback(async (day) => {
     try {
-      const [dayRes, runRes, seriesRes, changedRes, quickRes, statusesRes, eventsRes, scenarioRes] = await Promise.all([
+      const [dayRes, runRes, seriesRes, fullSeriesRes, changedRes, quickRes, statusesRes, eventsRes, scenarioRes] = await Promise.all([
         api.get(`/day/${day}`),
         api.get("/run-info"),
         api.get(`/time-series?start=1&end=${day}`),
+        api.get(`/time-series?start=1&end=111`), // Full series for forecast charts
         api.get(`/what-changed/${day}`),
         api.get("/quick-days"),
         api.get("/actions/statuses"),
@@ -54,6 +58,7 @@ function App() {
       setDayData(dayRes.data);
       setRunInfo(runRes.data);
       setTimeSeries(seriesRes.data.series);
+      setFullSeries(fullSeriesRes.data.series);
       setWhatChanged(changedRes.data.changes);
       setQuickDays(quickRes.data.days);
       setEvents(eventsRes.data);
@@ -79,6 +84,7 @@ function App() {
 
   const handleDayChange = (day) => {
     setLoading(true);
+    setOutcomeDelta(null); // Reset outcome delta when changing day
     setCurrentDay(day);
   };
 
@@ -98,11 +104,23 @@ function App() {
       
       toast.success(`Action marked as ${status}`);
       
-      // If marked as Done, refresh scenario comparison to show impact
+      // If marked as Done, calculate and show outcome delta
       if (status === "Done") {
         const scenarioRes = await api.get(`/scenario-comparison/${currentDay}`);
         setScenarioComparison(scenarioRes.data);
-        // Refresh day data to get updated metrics
+        
+        // Calculate outcome delta for display
+        const action = dayData?.actions?.find(a => a.id === actionId);
+        if (action?.impact_on_done) {
+          setOutcomeDelta(prev => ({
+            remaining_days: (prev?.remaining_days || 0) + action.impact_on_done.remaining_days_delta,
+            health_score: (prev?.health_score || 0) + action.impact_on_done.health_score_delta,
+            polymer_reduction: (prev?.polymer_reduction || 0) + action.impact_on_done.polymer_reduction_pct,
+            ci_tightening: (prev?.ci_tightening || 0) + action.impact_on_done.ci_tightening_days
+          }));
+        }
+        
+        // Refresh day data
         const dayRes = await api.post(`/apply-action-impact/${currentDay}`, [actionId]);
         if (dayRes.data.adjusted) {
           setDayData(prev => ({
@@ -122,6 +140,7 @@ function App() {
     dayData,
     runInfo,
     timeSeries,
+    fullSeries,
     whatChanged,
     quickDays,
     loading,
@@ -131,8 +150,8 @@ function App() {
     updateActionStatus,
     events,
     scenarioComparison,
-    scenarioMode,
-    setScenarioMode
+    outcomeDelta,
+    setOutcomeDelta
   };
 
   return (
@@ -141,10 +160,16 @@ function App() {
         <div className="app-layout">
           <LeftNav />
           <div className="main-content">
-            <StatusStrip dayData={dayData} />
+            <TopBar 
+              currentDay={currentDay} 
+              quickDays={quickDays} 
+              onDayChange={handleDayChange}
+              dayData={dayData}
+            />
             <Routes>
               <Route path="/" element={<MissionControl />} />
-              <Route path="/simulator" element={<Simulator />} />
+              <Route path="/actions" element={<ActionsRequired />} />
+              <Route path="/plan" element={<PlanCommit />} />
             </Routes>
           </div>
         </div>
@@ -157,7 +182,8 @@ function App() {
 function LeftNav() {
   const navItems = [
     { path: "/", label: "Mission Control", icon: Gauge },
-    { path: "/simulator", label: "Simulator", icon: FlaskConical },
+    { path: "/actions", label: "Actions Required", icon: ClipboardList },
+    { path: "/plan", label: "Plan & Commit", icon: Target },
   ];
 
   return (
@@ -187,45 +213,66 @@ function LeftNav() {
       </div>
       
       <div className="nav-footer">
-        <div className="tooltip prototype-badge">
-          <Info size={12} />
-          <span>Prototype</span>
-          <div className="tooltip-content">
-            Illustrative simulation for UX; not plant-validated logic.
-          </div>
+        <div className="demo-badge">
+          <Info size={10} />
+          <span>Demo</span>
         </div>
       </div>
     </nav>
   );
 }
 
-function StatusStrip({ dayData }) {
-  if (!dayData) return null;
-  
-  const feedStatus = dayData.feed_status || "Healthy";
-  const statusClass = feedStatus === "Healthy" ? "" : feedStatus === "Delayed" ? "delayed" : "interrupted";
-  
+function TopBar({ currentDay, quickDays, onDayChange, dayData }) {
   return (
-    <div className="status-strip" data-testid="status-strip">
-      <div className="status-left">
-        <div className="status-item">
-          <span className={`status-dot ${statusClass}`}></span>
-          <span className="status-label">Feed:</span>
-          <span className="status-value">{feedStatus}</span>
-        </div>
-        <div className="status-item">
-          <span className="status-label">Updated:</span>
-          <span className="status-value">2 min ago</span>
-        </div>
-        <div className="status-item">
-          <span className="status-label">Scored:</span>
-          <span className="status-value">5 min ago</span>
-        </div>
-      </div>
-      <div className="status-right">
+    <div className="top-bar" data-testid="top-bar">
+      <div className="top-bar-left">
         <div className="run-selector">
           <Activity size={14} />
-          <span>KR-AA-GOLDEN-CANDIDATE</span>
+          <span>KR-AA-CURRENT-BEST-CANDIDATE</span>
+        </div>
+      </div>
+      
+      <div className="top-bar-center">
+        <div className="day-selector">
+          <span className="day-label">Day</span>
+          <span className="day-value">{currentDay}</span>
+          <span className="day-total">of 111</span>
+          
+          <div className="day-slider-container">
+            <input 
+              type="range" 
+              min="1" 
+              max="111" 
+              value={currentDay}
+              onChange={(e) => onDayChange(parseInt(e.target.value))}
+              className="day-slider-input"
+            />
+          </div>
+          
+          <div className="quick-chips">
+            {quickDays.map((item) => (
+              <button
+                key={item.day}
+                className={`quick-chip ${currentDay === item.day ? "active" : ""}`}
+                onClick={() => onDayChange(item.day)}
+                data-testid={`quick-day-${item.day}`}
+              >
+                {item.day}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      
+      <div className="top-bar-right">
+        <div className="data-status">
+          <span className="data-status-item">
+            <span className="status-dot ok"></span>
+            Data updated: 2 min ago
+          </span>
+          <span className="data-status-item">
+            Scored: 5 min ago
+          </span>
         </div>
       </div>
     </div>
