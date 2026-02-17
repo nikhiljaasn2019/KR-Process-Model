@@ -27,10 +27,10 @@ import {
 // ========== PREMIUM COLOR PALETTE ==========
 const COLORS = {
   benchmark: "#64748B",      // Slate - Current Best (dashed 2.5px)
-  actual: "#0F172A",         // Near-black - Actual (solid 3.5px)
-  forecast: "#0F766E",       // Teal - Forecast P50 (solid 3px)
-  forecastBand: "rgba(15,118,110,0.16)",  // Light teal band
-  event: "#F97316",          // Orange for events
+  actual: "#3B82F6",         // Blue - Actual (solid 3.5px) - matches UI accent
+  forecast: "#F59E0B",       // Orange/Amber - Forecast P50 (solid 3px) - matches "Stable" text
+  forecastBand: "rgba(245,158,11,0.16)",  // Light orange band
+  event: "#DC2626",          // Red for events
   eventCritical: "#DC2626",  // Red for critical events
   grid: "#E5E7EB",           // Very subtle grid (0.6px)
   axisText: "#475569",       // Slate-600 for axis labels
