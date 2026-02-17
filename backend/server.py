@@ -955,7 +955,7 @@ async def get_scenario_comparison(day: int):
         "forecast_end_day": base_data["forecast_end_day_p50"],
         "predicted_end_date_p50": base_data["predicted_end_date_p50"],
         "predicted_end_date_p90": base_data["predicted_end_date_p90"],
-        "golden_gap_days": base_data["golden_gap_days"],
+        "benchmark_gap_days": base_data.get("benchmark_gap_days", base_data.get("golden_gap_days", 0)),
         "run_health_score": health_base,
         "output_p50_tons": base_data["output_p50_tons"],
         "output_p90_tons": base_data["output_p90_tons"],
@@ -965,19 +965,18 @@ async def get_scenario_comparison(day: int):
         "ci_days": ci_base
     }
     
-    # "Execute Moves" scenario (with action impacts)
+    # "Execute Moves" scenario (with action impacts) - USE FUTURE-LOOKING DATES
     new_remaining = remaining_base + total_remaining_delta
     new_health = min(100, health_base + total_health_delta)
     new_ci = max(2, ci_base - total_ci_tightening)
     new_polymer = base_data["polymer_burden_kg_per_day"] * (1 - total_polymer_reduction / 100)
     
-    # Recalculate end dates
-    start_date = datetime.fromisoformat(sim_engine.golden_run["start_ts"].replace("+05:30", "+05:30"))
-    base_date = start_date + timedelta(days=day - 1)
-    new_end_date = base_date + timedelta(days=new_remaining)
+    # Recalculate end dates using future-looking logic
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    new_end_date = today + timedelta(days=new_remaining)
     
     new_forecast_end_day = day + new_remaining
-    new_golden_gap = new_forecast_end_day - 111
+    new_benchmark_gap = new_forecast_end_day - 111
     
     # Recalculate outputs
     avg_output = base_data["eaa_output_tpd"] * 0.95
@@ -990,7 +989,7 @@ async def get_scenario_comparison(day: int):
         "forecast_end_day": new_forecast_end_day,
         "predicted_end_date_p50": new_end_date.strftime("%Y-%m-%d"),
         "predicted_end_date_p90": (new_end_date - timedelta(days=int(new_ci * 0.5))).strftime("%Y-%m-%d"),
-        "golden_gap_days": new_golden_gap,
+        "benchmark_gap_days": new_benchmark_gap,
         "run_health_score": new_health,
         "output_p50_tons": new_output_p50,
         "output_p90_tons": new_output_p90,
@@ -1005,7 +1004,7 @@ async def get_scenario_comparison(day: int):
     deltas = {
         "remaining_days": total_remaining_delta,
         "health_score": total_health_delta,
-        "golden_gap": new_golden_gap - base_data["golden_gap_days"],
+        "benchmark_gap": new_benchmark_gap - base_data.get("benchmark_gap_days", base_data.get("golden_gap_days", 0)),
         "output_p50": new_output_p50 - base_data["output_p50_tons"],
         "ci_days": -total_ci_tightening
     }
