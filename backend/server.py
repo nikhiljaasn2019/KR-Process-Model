@@ -138,7 +138,7 @@ class SimulationEngine:
         return metrics
     
     def _calculate_derived_metrics(self, day: int, metrics: dict) -> dict:
-        """Calculate derived/computed metrics"""
+        """Calculate derived/computed metrics with FUTURE-LOOKING dates"""
         
         # Polymer Build Index (0-100) from polymer burden + filter changes
         polymer_normalized = min(100, (metrics["polymer_burden_kg_per_day"] / 1500) * 100)
@@ -174,28 +174,39 @@ class SimulationEngine:
         else:
             metrics["feed_status"] = "Interrupted"
         
-        # Predicted end date (P50)
-        base_date = self.start_date + timedelta(days=day - 1)
-        predicted_end = base_date + timedelta(days=remaining)
+        # ========== FUTURE-LOOKING DATE LOGIC ==========
+        # Run start date = today - (currentDay - 1) days
+        # This makes all dates appear plausible and future-looking
+        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        run_start_date = today - timedelta(days=day - 1)
+        current_date = today  # "Today" in the simulation
+        predicted_end = today + timedelta(days=remaining)  # Forecast end from today
+        
         metrics["predicted_end_date"] = predicted_end.strftime("%Y-%m-%d")
         metrics["predicted_end_date_early"] = (predicted_end - timedelta(days=ci)).strftime("%Y-%m-%d")
         metrics["predicted_end_date_late"] = (predicted_end + timedelta(days=ci)).strftime("%Y-%m-%d")
         
-        # Current date
-        current_date = self.start_date + timedelta(days=day - 1)
+        # Current date (today)
         metrics["current_date"] = current_date.strftime("%Y-%m-%d")
         metrics["current_date_display"] = current_date.strftime("%d %b %Y")
+        metrics["run_start_date"] = run_start_date.strftime("%Y-%m-%d")
         
-        # ========== GOLDEN GAP CALCULATIONS ==========
-        golden_target_days = 111
+        # ========== TOTAL RUN LENGTH (intuitive metric) ==========
+        # predicted_total_run_length = current_day + predicted_remaining_days
+        metrics["predicted_total_run_length"] = day + remaining
+        metrics["predicted_total_run_length_p90"] = day + remaining - int(ci * 0.5)
+        metrics["predicted_total_run_length_p10"] = day + remaining + int(ci * 0.5)
+        
+        # ========== BENCHMARK GAP CALCULATIONS ==========
+        benchmark_target_days = 111  # Current Best Run length
         forecast_end_day = day + remaining
-        metrics["golden_gap_days"] = forecast_end_day - golden_target_days  # negative = behind golden
-        metrics["golden_target_days"] = golden_target_days
+        metrics["benchmark_gap_days"] = forecast_end_day - benchmark_target_days  # positive = ahead
+        metrics["benchmark_target_days"] = benchmark_target_days
         metrics["forecast_end_day_p50"] = forecast_end_day
         metrics["forecast_end_day_p90"] = forecast_end_day - int(ci * 0.5)  # P90 = pessimistic
         metrics["forecast_end_day_p10"] = forecast_end_day + int(ci * 0.5)  # P10 = optimistic
         
-        # End dates for P10/P50/P90
+        # End dates for P10/P50/P90 (all future-looking)
         metrics["predicted_end_date_p50"] = predicted_end.strftime("%Y-%m-%d")
         metrics["predicted_end_date_p90"] = (predicted_end - timedelta(days=int(ci * 0.5))).strftime("%Y-%m-%d")
         metrics["predicted_end_date_p10"] = (predicted_end + timedelta(days=int(ci * 0.5))).strftime("%Y-%m-%d")
@@ -215,11 +226,21 @@ class SimulationEngine:
         p10_output_rate = metrics["eaa_output_tpd"] * 1.02  # Slightly better
         metrics["output_p10_tons"] = int(metrics["cumulative_output_tons"] + p10_output_rate * p10_remaining_days * 0.95)
         
-        # Shutdown window (P90 - conservative)
+        # Shutdown window (P90 - conservative) - future-looking
         shutdown_start = predicted_end - timedelta(days=int(ci * 0.7))
         shutdown_end = predicted_end + timedelta(days=int(ci * 0.3))
         metrics["shutdown_window_start"] = shutdown_start.strftime("%Y-%m-%d")
         metrics["shutdown_window_end"] = shutdown_end.strftime("%Y-%m-%d")
+        
+        # ========== BENCHMARK POLYMER DATA (rising, not flat) ==========
+        # Benchmark polymer should be plausible rising trajectory (lower than actual)
+        base_polymer = 120  # Starting benchmark polymer
+        polymer_growth_rate = 2.5  # kg/day increase per run day
+        metrics["benchmark_polymer_kg_per_day"] = base_polymer + (day * polymer_growth_rate * 0.8)  # 80% of actual growth
+        
+        # ========== BENCHMARK OUTPUT DATA ==========
+        metrics["benchmark_output_tpd"] = 340  # Benchmark daily output
+        metrics["benchmark_cumulative_tons"] = int(340 * day * 0.98)  # Benchmark cumulative
         
         return metrics
     
