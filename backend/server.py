@@ -336,68 +336,149 @@ class SyntheticDataEngine:
         polymer = metrics["polymer_burden_kg_per_day"]
         fouling = metrics["fouling_risk_index"]
         health = metrics["run_health_score"]
+        
+        # Action 1: Emergency flush if polymer high
+        if polymer > 500:
+            actions.append({
+                "id": f"ACT-{day:03d}-01",
+                "title": "Emergency Flush Cycle + Filter Swap",
+                "urgency": "critical" if polymer > 600 else "high",
+                "protects": "Run Length",
+                "effort": "High",
+                "horizon": "now",
+                "trigger": {
+                    "metric": "Polymer Burden",
+                    "current": f"{round(polymer)} kg/day",
+                    "baseline": "180 kg/day",
+                    "band": "150-220 kg/day",
+                    "deviation": f"+{round((polymer - 180) / 180 * 100)}%",
+                    "time_window": "Last 24h"
+                },
+                "where": ["G8", "G9", "V-014", "V-022"],
+                "checklist": [
+                    "IMMEDIATE: Initiate emergency flush on G8 (20 min cycle, max pressure)",
+                    "Swap G9 filter element if DP > 1.0 bar",
+                    "Increase inhibitor flow by 5% for next 48h",
+                    "Log polymer collection volume (target: >50kg removal)",
+                    "Brief oncoming shift: 'Run rescue protocol active'",
+                    "Schedule follow-up inspection at +24h"
+                ],
+                "impact_on_done": {
+                    "remaining_days_delta": 6,
+                    "health_score_delta": 5,
+                    "polymer_reduction_pct": 15,
+                    "ci_tightening_days": 1
+                },
+                "expected_effect": {
+                    "run_extension": "+4 to +8 days (simulated)",
+                    "polymer_change": "↓ flatten for 72h",
+                    "ci_change": "+6 days P50",
+                    "ci_tightening": "-1d"
+                }
+            })
+        
+        # Action 2: Run rescue if fouling high
+        if fouling > 4.5:
+            actions.append({
+                "id": f"ACT-{day:03d}-02",
+                "title": "Activate Run Rescue Mode",
+                "urgency": "critical" if fouling > 6 else "high",
+                "protects": "Both",
+                "effort": "High",
+                "horizon": "now",
+                "trigger": {
+                    "metric": "Fouling Risk Index",
+                    "current": f"{round(fouling, 1)}/10",
+                    "baseline": "2.2/10",
+                    "band": "1.5-3.0/10",
+                    "deviation": f"+{round((fouling - 2.2) / 2.2 * 100)}%",
+                    "time_window": "Last 72h trend"
+                },
+                "where": ["V-014", "V-022", "E-015", "G8", "G9"],
+                "checklist": [
+                    "Declare 'Run Rescue Mode' in shift log (triggers enhanced monitoring)",
+                    "Reduce temperature bands on V-014, V-022 by 1°C",
+                    "Increase cleaning cadence: +1 cycle per shift",
+                    "Inhibitor dose: increase by 8% for 72h",
+                    "Hourly DP checks on G8, G9 (log all readings)",
+                    "Alert maintenance: potential filter swap in 24-48h"
+                ],
+                "impact_on_done": {
+                    "remaining_days_delta": 7,
+                    "health_score_delta": 8,
+                    "polymer_reduction_pct": 20,
+                    "ci_tightening_days": 2
+                },
+                "expected_effect": {
+                    "run_extension": "+5 to +10 days (simulated)",
+                    "polymer_change": "↓ slope reduction",
+                    "ci_change": "+7 days P50",
+                    "ci_tightening": "-2d"
+                }
+            })
+        
+        # Action 3: Preventive inspection (medium priority)
+        if health < 80 or (polymer > 400 and polymer < 500):
+            actions.append({
+                "id": f"ACT-{day:03d}-03",
+                "title": "Schedule Preventive Filter Inspection",
+                "urgency": "medium",
+                "protects": "Run Length",
+                "effort": "Medium",
+                "horizon": "next_24h",
+                "trigger": {
+                    "metric": "Health Score",
+                    "current": f"{round(health)}/100",
+                    "baseline": "85/100",
+                    "band": "80-90/100",
+                    "deviation": f"{round(health - 85)}",
+                    "time_window": "Current"
+                },
+                "where": ["G8", "G9"],
+                "checklist": [
+                    "Schedule filter inspection for next maintenance window",
+                    "Pre-position replacement elements",
+                    "Review DP trend over last 7 days",
+                    "Coordinate with operations for timing"
+                ],
+                "impact_on_done": {
+                    "remaining_days_delta": 3,
+                    "health_score_delta": 3,
+                    "polymer_reduction_pct": 5,
+                    "ci_tightening_days": 1
+                },
+                "expected_effect": {
+                    "run_extension": "+2 to +4 days (simulated)",
+                    "polymer_change": "→ stabilize",
+                    "ci_change": "+3 days P50",
+                    "ci_tightening": "-1d"
+                }
+            })
+        
+        return actions
     
-    def _calculate_derived_metrics(self, day: int, metrics: dict) -> dict:
-        """Calculate derived/computed metrics with FUTURE-LOOKING dates"""
-        
-        # Polymer Build Index (0-100) from polymer burden + filter changes
-        polymer_normalized = min(100, (metrics["polymer_burden_kg_per_day"] / 1500) * 100)
-        filter_normalized = min(100, (metrics["filter_change_count_per_day"] / 3) * 100)
-        metrics["polymer_build_index"] = int((polymer_normalized * 0.6 + filter_normalized * 0.4))
-        
-        # Cumulative output (tons)
-        metrics["cumulative_output_tons"] = int(metrics["eaa_output_tpd"] * day * 0.95)
-        
-        # Expected total output till end
-        remaining = metrics["predicted_remaining_days"]
-        avg_future_output = metrics["eaa_output_tpd"] * 0.95  # Slight decline assumed
-        metrics["expected_total_output_tons"] = int(metrics["cumulative_output_tons"] + avg_future_output * remaining)
-        
-        # Output forecast band
-        metrics["eaa_output_band_min"] = int(metrics["eaa_output_tpd"] * 0.92)
-        metrics["eaa_output_band_max"] = int(metrics["eaa_output_tpd"] * 1.05)
-        
-        # Predictability score
-        ci = metrics["prediction_ci_90pct_days"]
-        if ci <= 5:
-            metrics["predictability_score"] = "High"
-        elif ci <= 9:
-            metrics["predictability_score"] = "Medium"
-        else:
-            metrics["predictability_score"] = "Low"
-        
-        # Data freshness status
-        if metrics["data_freshness_score"] >= 90:
-            metrics["feed_status"] = "Healthy"
-        elif metrics["data_freshness_score"] >= 75:
-            metrics["feed_status"] = "Delayed"
-        else:
-            metrics["feed_status"] = "Interrupted"
-        
-        # ========== FUTURE-LOOKING DATE LOGIC ==========
-        # Run start date = today - (currentDay - 1) days
-        # This makes all dates appear plausible and future-looking
-        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        run_start_date = today - timedelta(days=day - 1)
-        current_date = today  # "Today" in the simulation
-        predicted_end = today + timedelta(days=remaining)  # Forecast end from today
-        
-        metrics["predicted_end_date"] = predicted_end.strftime("%Y-%m-%d")
-        metrics["predicted_end_date_early"] = (predicted_end - timedelta(days=ci)).strftime("%Y-%m-%d")
-        metrics["predicted_end_date_late"] = (predicted_end + timedelta(days=ci)).strftime("%Y-%m-%d")
-        
-        # Current date (today)
-        metrics["current_date"] = current_date.strftime("%Y-%m-%d")
-        metrics["current_date_display"] = current_date.strftime("%d %b %Y")
-        metrics["run_start_date"] = run_start_date.strftime("%Y-%m-%d")
-        
-        # ========== TOTAL RUN LENGTH (intuitive metric) ==========
-        # predicted_total_run_length = current_day + predicted_remaining_days
-        metrics["predicted_total_run_length"] = day + remaining
-        metrics["predicted_total_run_length_p90"] = day + remaining - int(ci * 0.5)
-        metrics["predicted_total_run_length_p10"] = day + remaining + int(ci * 0.5)
-        
-        # ========== BENCHMARK GAP CALCULATIONS ==========
+    def get_time_series(self, start: int = 1, end: int = 111) -> list:
+        """Get time series data for a range of days"""
+        series = []
+        for day in range(start, min(end + 1, 112)):
+            series.append(self.series_data[day])
+        return series
+    
+    def get_events(self) -> list:
+        """Get list of events with day numbers"""
+        return [
+            {
+                "day": e["day"],
+                "type": e["type"],
+                "severity": "high" if e["severity"] == "high" else "medium",
+                "label": e["label"]
+            }
+            for e in self.EVENTS
+        ]
+
+
+# Create global instance
+sim_engine = SyntheticDataEngine(seed=42)
         benchmark_target_days = 111  # Current Best Run length
         forecast_end_day = day + remaining
         metrics["benchmark_gap_days"] = forecast_end_day - benchmark_target_days  # positive = ahead
