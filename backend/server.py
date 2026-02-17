@@ -33,109 +33,309 @@ api_router = APIRouter(prefix="/api")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ========== SIMULATION ENGINE ==========
+# ========== SYNTHETIC DATA ENGINE WITH HARD CONSTRAINTS ==========
 
-class SimulationEngine:
+class SyntheticDataEngine:
     """
-    Deterministic simulation engine for KR AA Run Health prototype.
-    Generates daily time-series using piecewise linear interpolation + jitter + events.
-    All dates are computed relative to TODAY so they appear future-looking.
+    Rigorous synthetic data engine with hard constraints.
+    
+    CORE STORY: Actual + Forecast are BETTER than Benchmark (Current Best Run)
+    - Lower polymer/fouling → longer run length + higher output + tighter CI
+    
+    RELATIONSHIPS (must hold everywhere):
+    - Benchmark polymer: 350-850 kg/day (smooth rising)
+    - Actual polymer: 10-20% LOWER than benchmark (with event spikes)
+    - Forecast polymer: 20-30% LOWER than benchmark (stable/flattening)
+    - Run length derived FROM polymer burden
+    - Output rate inversely tied to polymer
+    - CI widens during spikes, tightens when stable
     """
+    
+    # Fixed events (only 2, well-defined)
+    EVENTS = [
+        {"day": 12, "type": "FILTER_CLEANING_SPIKE", "severity": "medium", "label": "Filter Cleaning Spike"},
+        {"day": 52, "type": "FOULING_RISK_CLUSTER", "severity": "high", "label": "Fouling Risk Cluster"}
+    ]
+    
+    # Core parameters
+    BENCHMARK_RUN_LENGTH = 111  # Current Best Run total days
+    ACTUAL_RUN_BONUS = 5       # Actual is ~5 days better than benchmark
+    FORECAST_RUN_BONUS = 10    # Forecast is ~10 days better (with actions)
+    
+    # Polymer constraints
+    BENCHMARK_POLYMER_START = 380  # kg/day at day 1
+    BENCHMARK_POLYMER_END = 780    # kg/day at day 111
+    ACTUAL_POLYMER_FACTOR = 0.85   # Actual is 15% lower than benchmark
+    FORECAST_POLYMER_FACTOR = 0.72 # Forecast is 28% lower than benchmark
+    
+    # Output constraints
+    BENCHMARK_OUTPUT_RATE = 330    # tons/day baseline
+    ACTUAL_OUTPUT_RATE = 345       # tons/day (better)
+    FORECAST_OUTPUT_RATE = 358     # tons/day (best)
     
     def __init__(self, seed: int = 42):
         self.seed = seed
         self.rng = random.Random(seed)
-        self.anchors = RUN_SEED["anchors"]
-        self.events = OPS_EVENTS["events"]
         self.golden_run = RUN_SEED["golden_run_candidate"]
-        self.target_days = RUN_SEED["kpi_targets"]["target_run_length_days"]
-        self.benchmark_run_length = 111  # Current Best Run length
-        # Date logic: Run starts (currentDay - 1) days before today
-        # This makes all dates appear plausible and future-looking
-        self._today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        self.start_date = datetime.fromisoformat(self.golden_run["start_ts"].replace("+05:30", "+05:30"))
         
-        # Pre-generate full time series
-        self.time_series = self._generate_full_series()
+        # Pre-generate all time series data
+        self._generate_all_series()
+    
+    def _generate_all_series(self):
+        """Generate coherent time series for all 111 days"""
+        self.series_data = {}
         
-        # Simulator state (for what-if)
-        self.simulator_adjustments = {
-            "cleaning_cadence": 0,  # 0, +1, +2
-            "inhibitor_dose_index": 1.0,  # 0.9 to 1.3
-            "flush_frequency": 0,  # 0, +1
-            "intervention_discipline": "medium"  # low/medium/high
+        for day in range(1, 112):
+            self.series_data[day] = self._compute_day_metrics(day)
+    
+    def _get_benchmark_polymer(self, day: int) -> float:
+        """Benchmark polymer: smooth rising curve 380 → 780 kg/day"""
+        # Use slight exponential growth for realism
+        progress = (day - 1) / 110  # 0 to 1
+        # Polynomial growth (starts slower, accelerates)
+        growth = progress ** 1.3
+        return self.BENCHMARK_POLYMER_START + (self.BENCHMARK_POLYMER_END - self.BENCHMARK_POLYMER_START) * growth
+    
+    def _get_event_spike(self, day: int) -> tuple:
+        """Returns (spike_amount, is_event, event_info) for a day"""
+        for event in self.EVENTS:
+            event_day = event["day"]
+            # Spike on event day and 2 days after with decay
+            if event_day <= day <= event_day + 2:
+                decay = 1.0 - (day - event_day) * 0.35
+                decay = max(0.3, decay)
+                spike = 180 if event["severity"] == "high" else 120
+                return (spike * decay, True, event)
+        return (0, False, None)
+    
+    def _compute_day_metrics(self, day: int) -> dict:
+        """Compute all metrics for a single day with hard constraints"""
+        
+        # ========== POLYMER/FOULING ==========
+        benchmark_polymer = self._get_benchmark_polymer(day)
+        spike, is_event, event_info = self._get_event_spike(day)
+        
+        # Actual polymer: 15% lower than benchmark + small jitter + event spikes
+        jitter = self.rng.uniform(-0.02, 0.02)
+        actual_polymer = benchmark_polymer * (self.ACTUAL_POLYMER_FACTOR + jitter) + spike
+        
+        # Forecast polymer: 28% lower, stable (no spikes in forecast)
+        forecast_polymer = benchmark_polymer * self.FORECAST_POLYMER_FACTOR
+        # Slight flattening effect after day 60
+        if day > 60:
+            forecast_polymer *= 0.95
+        
+        # ========== RUN LENGTH (derived from polymer) ==========
+        # Core formula: higher polymer = shorter remaining days
+        # Benchmark: fixed at 111 days total
+        benchmark_total_run = self.BENCHMARK_RUN_LENGTH
+        
+        # Actual: polymer is lower, so run is longer
+        # remainingDays = (111 - day) + bonus adjusted by polymer ratio
+        polymer_advantage = (benchmark_polymer - actual_polymer) / benchmark_polymer
+        actual_bonus = self.ACTUAL_RUN_BONUS * (1 + polymer_advantage * 0.5)
+        actual_remaining = max(1, (benchmark_total_run - day) + actual_bonus)
+        actual_total_run = day + actual_remaining
+        
+        # Forecast: even lower polymer, even longer run
+        forecast_bonus = self.FORECAST_RUN_BONUS * (1 + polymer_advantage * 0.3)
+        forecast_remaining = max(1, (benchmark_total_run - day) + forecast_bonus)
+        forecast_total_run = day + forecast_remaining
+        
+        # ========== CONFIDENCE INTERVAL ==========
+        # Base CI: ±4 days when stable
+        base_ci = 4
+        # Widen during events
+        if is_event:
+            ci = base_ci + 3  # ±7 days during events
+        elif spike > 0:  # Decay period
+            ci = base_ci + 1.5
+        else:
+            # Tighten as we get closer to end (more certainty)
+            progress = day / 111
+            ci = base_ci - progress * 1.5
+        ci = max(2, min(8, ci))
+        
+        # ========== OUTPUT ==========
+        # Higher when polymer is lower
+        polymer_ratio = actual_polymer / benchmark_polymer
+        
+        # Benchmark cumulative output
+        benchmark_output_rate = self.BENCHMARK_OUTPUT_RATE
+        benchmark_cumulative = benchmark_output_rate * day
+        
+        # Actual: better output rate when polymer is lower
+        actual_output_rate = self.ACTUAL_OUTPUT_RATE * (1.1 - polymer_ratio * 0.1)
+        # Small dip during events
+        if is_event:
+            actual_output_rate *= 0.97
+        actual_cumulative = actual_output_rate * day
+        
+        # Forecast: best output rate
+        forecast_output_rate = self.FORECAST_OUTPUT_RATE
+        forecast_cumulative = forecast_output_rate * day
+        
+        # ========== FILTER CHANGES ==========
+        # Derived from polymer burden
+        filter_changes = (actual_polymer / 500) * (1 + self.rng.uniform(-0.1, 0.1))
+        if is_event:
+            filter_changes += 0.8
+        
+        # ========== HEALTH SCORE ==========
+        # Inversely related to polymer
+        health_base = 85
+        polymer_penalty = (actual_polymer - 300) / 50  # Higher polymer = lower health
+        health_score = health_base - polymer_penalty
+        if is_event:
+            health_score -= 8
+        health_score = max(50, min(95, health_score))
+        
+        # ========== FOULING RISK INDEX ==========
+        fouling_risk = (actual_polymer / 200) * (1 + self.rng.uniform(-0.05, 0.05))
+        if is_event:
+            fouling_risk += 1.5
+        fouling_risk = min(10, fouling_risk)
+        
+        return {
+            "day": day,
+            # Polymer/Fouling
+            "benchmark_polymer": round(benchmark_polymer, 1),
+            "actual_polymer": round(actual_polymer, 1),
+            "forecast_polymer": round(forecast_polymer, 1),
+            "polymer_burden_kg_per_day": round(actual_polymer, 1),
+            "filter_change_count_per_day": round(filter_changes, 2),
+            "fouling_risk_index": round(fouling_risk, 2),
+            # Run length
+            "benchmark_total_run": benchmark_total_run,
+            "actual_total_run": round(actual_total_run, 1),
+            "forecast_total_run": round(forecast_total_run, 1),
+            "predicted_remaining_days": round(actual_remaining),
+            "predicted_total_run_length": round(actual_total_run),
+            # Confidence
+            "prediction_ci_90pct_days": round(ci, 1),
+            # Output
+            "benchmark_output_rate": round(benchmark_output_rate, 1),
+            "actual_output_rate": round(actual_output_rate, 1),
+            "forecast_output_rate": round(forecast_output_rate, 1),
+            "benchmark_cumulative": round(benchmark_cumulative),
+            "actual_cumulative": round(actual_cumulative),
+            "forecast_cumulative": round(forecast_cumulative),
+            "eaa_output_tpd": round(actual_output_rate, 1),
+            "cumulative_output_tons": round(actual_cumulative),
+            # Health
+            "run_health_score": round(health_score, 1),
+            # Events
+            "has_event": is_event,
+            "event_info": event_info,
+            # Other metrics (for compatibility)
+            "data_freshness_score": 95 - self.rng.uniform(0, 5),
         }
     
-    def _get_jitter(self, base_value: float, max_pct: float = 2.5) -> float:
-        """Apply deterministic jitter to a value"""
-        jitter_pct = self.rng.uniform(-max_pct, max_pct) / 100
-        return base_value * (1 + jitter_pct)
+    def get_day_data(self, day: int) -> dict:
+        """Get full data for a specific day"""
+        if day < 1:
+            day = 1
+        if day > 111:
+            day = 111
+        
+        base = self.series_data[day].copy()
+        
+        # Add date calculations
+        base = self._add_date_fields(day, base)
+        
+        # Add commitment/output projections
+        base = self._add_commitment_fields(day, base)
+        
+        # Add actions
+        base["actions"] = self._get_actions_for_day(day)
+        
+        return base
     
-    def _interpolate(self, day: int, metric: str) -> float:
-        """Piecewise linear interpolation between anchors"""
-        anchor_days = [a["day"] for a in self.anchors]
+    def _add_date_fields(self, day: int, metrics: dict) -> dict:
+        """Add future-looking date fields"""
+        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        run_start_date = today - timedelta(days=day - 1)
         
-        # Find surrounding anchors
-        lower_anchor = None
-        upper_anchor = None
+        remaining = metrics["predicted_remaining_days"]
+        ci = metrics["prediction_ci_90pct_days"]
         
-        for i, anchor in enumerate(self.anchors):
-            if anchor["day"] <= day:
-                lower_anchor = anchor
-            if anchor["day"] >= day and upper_anchor is None:
-                upper_anchor = anchor
-                break
+        predicted_end = today + timedelta(days=remaining)
         
-        if lower_anchor is None:
-            lower_anchor = self.anchors[0]
-        if upper_anchor is None:
-            upper_anchor = self.anchors[-1]
+        metrics["run_start_date"] = run_start_date.strftime("%Y-%m-%d")
+        metrics["current_date"] = today.strftime("%Y-%m-%d")
+        metrics["current_date_display"] = today.strftime("%d %b %Y")
         
-        if lower_anchor["day"] == upper_anchor["day"]:
-            return lower_anchor.get(metric, 0)
+        metrics["predicted_end_date"] = predicted_end.strftime("%Y-%m-%d")
+        metrics["predicted_end_date_p50"] = predicted_end.strftime("%Y-%m-%d")
+        metrics["predicted_end_date_p90"] = (predicted_end - timedelta(days=int(ci * 0.5))).strftime("%Y-%m-%d")
+        metrics["predicted_end_date_p10"] = (predicted_end + timedelta(days=int(ci * 0.5))).strftime("%Y-%m-%d")
         
-        # Linear interpolation
-        t = (day - lower_anchor["day"]) / (upper_anchor["day"] - lower_anchor["day"])
-        lower_val = lower_anchor.get(metric, 0)
-        upper_val = upper_anchor.get(metric, 0)
+        # Shutdown window
+        shutdown_start = predicted_end - timedelta(days=int(ci * 0.7))
+        shutdown_end = predicted_end + timedelta(days=int(ci * 0.3))
+        metrics["shutdown_window_start"] = shutdown_start.strftime("%Y-%m-%d")
+        metrics["shutdown_window_end"] = shutdown_end.strftime("%Y-%m-%d")
         
-        return lower_val + t * (upper_val - lower_val)
-    
-    def _apply_event_effects(self, day: int, metrics: dict) -> dict:
-        """Apply event overrides/spikes to metrics"""
-        for event in self.events:
-            event_day = event["day"]
-            
-            # Event affects current day and a few days after
-            if event_day <= day <= event_day + 3:
-                severity_mult = {"low": 1.0, "medium": 1.3, "high": 1.6}.get(event["severity"], 1.0)
-                decay = 1.0 - (day - event_day) * 0.2  # Decay effect over days
-                decay = max(0.3, decay)
-                
-                if event["type"] == "FILTER_CLEANING_SPIKE":
-                    metrics["filter_change_count_per_day"] += 1.5 * severity_mult * decay
-                    metrics["polymer_burden_kg_per_day"] += 200 * severity_mult * decay
-                
-                elif event["type"] == "TEMP_EXCURSION":
-                    metrics["fouling_risk_index"] += 0.8 * severity_mult * decay
-                    metrics["run_health_score"] -= 2 * severity_mult * decay
-                
-                elif event["type"] == "FOULING_RISK_CLUSTER":
-                    metrics["fouling_risk_index"] += 1.5 * severity_mult * decay
-                    metrics["polymer_burden_kg_per_day"] += 400 * severity_mult * decay
-                    metrics["filter_change_count_per_day"] += 2 * decay
-                    metrics["run_health_score"] -= 5 * decay
-                
-                elif event["type"] == "RUN_RESCUE_MODE":
-                    # Rescue mode SLOWS worsening
-                    metrics["fouling_risk_index"] *= 0.9
-                    metrics["run_health_score"] += 3 * decay
-                
-                elif event["type"] == "PREDICTED_END_SHIFT":
-                    if day == event_day:
-                        metrics["predicted_remaining_days"] = event["observed"]["predicted_remaining_days_after"]
+        # P10/P90 run lengths
+        metrics["predicted_total_run_length_p90"] = metrics["predicted_total_run_length"] - int(ci * 0.5)
+        metrics["predicted_total_run_length_p10"] = metrics["predicted_total_run_length"] + int(ci * 0.5)
+        
+        # Benchmark gap
+        metrics["benchmark_gap_days"] = metrics["predicted_total_run_length"] - self.BENCHMARK_RUN_LENGTH
+        metrics["benchmark_target_days"] = self.BENCHMARK_RUN_LENGTH
+        metrics["forecast_end_day_p50"] = metrics["predicted_total_run_length"]
         
         return metrics
+    
+    def _add_commitment_fields(self, day: int, metrics: dict) -> dict:
+        """Add output commitment projections"""
+        remaining = metrics["predicted_remaining_days"]
+        ci = metrics["prediction_ci_90pct_days"]
+        current_cumulative = metrics["cumulative_output_tons"]
+        output_rate = metrics["eaa_output_tpd"]
+        
+        # P50 expected output
+        p50_output = current_cumulative + output_rate * remaining
+        metrics["output_p50_tons"] = round(p50_output)
+        
+        # P90 committed output (conservative)
+        p90_remaining = remaining - int(ci * 0.5)
+        p90_output = current_cumulative + output_rate * 0.95 * p90_remaining
+        metrics["output_p90_tons"] = round(p90_output)
+        
+        # P10 upside output
+        p10_remaining = remaining + int(ci * 0.5)
+        p10_output = current_cumulative + output_rate * 1.02 * p10_remaining
+        metrics["output_p10_tons"] = round(p10_output)
+        
+        # Other compatibility fields
+        metrics["expected_total_output_tons"] = metrics["output_p50_tons"]
+        metrics["eaa_output_band_min"] = round(output_rate * 0.95)
+        metrics["eaa_output_band_max"] = round(output_rate * 1.05)
+        metrics["polymer_build_index"] = min(100, int((metrics["polymer_burden_kg_per_day"] / 1000) * 100))
+        
+        if metrics["prediction_ci_90pct_days"] <= 4:
+            metrics["predictability_score"] = "High"
+        elif metrics["prediction_ci_90pct_days"] <= 6:
+            metrics["predictability_score"] = "Medium"
+        else:
+            metrics["predictability_score"] = "Low"
+        
+        if metrics["data_freshness_score"] >= 90:
+            metrics["feed_status"] = "Healthy"
+        else:
+            metrics["feed_status"] = "Delayed"
+        
+        return metrics
+    
+    def _get_actions_for_day(self, day: int) -> list:
+        """Get recommended actions based on current state"""
+        metrics = self.series_data[day]
+        actions = []
+        
+        polymer = metrics["polymer_burden_kg_per_day"]
+        fouling = metrics["fouling_risk_index"]
+        health = metrics["run_health_score"]
     
     def _calculate_derived_metrics(self, day: int, metrics: dict) -> dict:
         """Calculate derived/computed metrics with FUTURE-LOOKING dates"""
