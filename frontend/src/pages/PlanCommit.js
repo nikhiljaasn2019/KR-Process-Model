@@ -193,6 +193,9 @@ export default function PlanCommit() {
         />
       )}
 
+      {/* ACTION PLAYBOOK - Specific steps for selected scenario */}
+      <ActionPlaybook scenario={selectedScenario} scenarioData={activeScenario} />
+
       {/* Scenario Results */}
       <div className="scenario-results">
         <div className="results-header">
