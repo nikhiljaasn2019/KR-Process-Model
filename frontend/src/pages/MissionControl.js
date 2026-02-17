@@ -26,7 +26,7 @@ import {
 
 // ========== PREMIUM COLOR PALETTE ==========
 const COLORS = {
-  benchmark: "#64748B",      // Slate - Current Best (dashed 2.5px)
+  benchmark: "#15803D",      // Deep Green - Current Best (dashed 2.5px)
   actual: "#3B82F6",         // Blue - Actual (solid 3.5px) - matches UI accent
   forecast: "#F59E0B",       // Orange/Amber - Forecast P50 (solid 3px) - matches "Stable" text
   forecastBand: "rgba(245,158,11,0.16)",  // Light orange band
