@@ -1,138 +1,168 @@
 # KR AA Run Health OS - Product Requirements Document
 
-## Version 2.2.1 - Bug Fixes (Feb 2026)
+## Version 3.0 - Complete 3-Tab Architecture (Feb 2026)
 
 ## Original Problem Statement
 Build a conviction prototype for BPCL Kochi Refinery Acrylic Acid unit that makes the ED + operators feel: "We desperately need this to achieve long AND predictable runs (>= golden run) and to plan output + shutdowns."
 
-## PRIMARY GOAL: Decision Instrument
-Transform from a status dashboard into a **DECISION INSTRUMENT** that answers 3 critical questions:
-1. **Are we going to BEAT the golden run (111 days)?**
-2. **What output can we COMMIT to customers, with confidence bands?**
-3. **What EXACT actions must happen today/this week — and do they change the forecast?**
+## PRIMARY GOAL: Structured Decision-Making Tool
+Transform from a single cockpit into a **3-TAB INFORMATION ARCHITECTURE** with:
+1. **Mission Control**: High-level cockpit for a quick glance
+2. **Actions Required**: Detailed workbench for operators to execute and track tasks
+3. **Plan & Commit**: Decision studio for scenario planning
 
-## Key Features Implemented (V2.2)
+## V3.0 Features Implemented
 
-### A) Default Landing = Critical Moment (Day 70)
-- Landing day changed from Day 1 to **Day 70** (rescue window)
-- Quick jump buttons: **7, 30, 52, 70, 96, 110** (critical moments)
-- Each button labeled with phase and moment description
+### A) 3-Tab Navigation
+- **Mission Control** (default): Quick overview with Hero Triptych
+- **Actions Required**: Detailed action workbench by horizon
+- **Plan & Commit**: Scenario planning with 4 distinct options
 
-### B) Golden Gap Tile
-- **Golden Target**: 111 days
-- **Forecast P50/P90**: Predicted end dates
-- **Gap to Golden**: Days ahead/behind target (+4 to +18 depending on scenario)
-- Visual status: "On track to beat Golden" (green) / "Behind Golden target" (red)
+### B) Mission Control - Hero Triptych
+Three side-by-side charts "above the fold":
+1. **Run End Path**: Benchmark Run + Actual + P10-P90 forecast cone
+2. **Output Path**: Cumulative output trajectory vs benchmark
+3. **Polymer/Fouling Path**: Polymer burden with event markers
 
-### C) Commitment View (for ED)
-- **P90 Committed Output**: Conservative estimate (33,820 tons)
-- **P50 Expected Output**: Base case (35,800 tons)
-- **P10 Upside Output**: Optimistic estimate (37,032 tons)
-- **Shutdown Window (P90)**: Date range for planning
+**Commitment Box** displays:
+- P90 commitment date (production until)
+- Committed output (P90): Conservative
+- Expected output (P50): Base case
+- Shutdown window (P90)
+- Confidence trend (14d): Tightening/Stable/Widening
 
-### D) Scenario Toggle
-Side-by-side comparison: **"If we do nothing"** vs **"If we execute Today's Moves"**
-- Switching scenarios updates:
-  - Golden Gap (+4 → +18 days)
-  - Days Remaining (45 → 59 days)
-  - Run Health Score (75 → 84)
-  - All P10/P50/P90 output projections
-  - Shutdown Window
-- "SIMULATED" badges appear when Execute Moves selected
+**Priority Actions Preview**: Top 3 actions with:
+- Urgency badges (CRITICAL/HIGH/MEDIUM)
+- Trigger deviation percentages
+- Asset tags
+- Impact chips
+- Link to Actions Required
 
-### E) Today's Moves - Urgent Actions
+### C) Actions Required - Workbench
+Actions grouped by horizon:
+- **Now (this shift)**: Critical and time-sensitive
+- **Next 24 hours**: High priority
+- **This week**: Medium/routine
+
 Each action card includes:
-- **Urgency Level**: CRITICAL, HIGH, MEDIUM, ROUTINE
 - **Protects**: Run Length / Productivity / Both
-- **Trigger Section**:
-  - Metric name
-  - Current value
-  - Baseline value
-  - Normal band
-  - Deviation percentage (e.g., +448%)
-  - Time window (Last 24h/48h/72h/7d)
-- **Assets**: Equipment tags (G8, G9, V-014, V-022, etc.)
-- **Why**: Explanation with numbers + timeframe
-- **Action Checklist**: Numbered specific steps
-- **Expected Effect**: 
-  - Run Length impact (e.g., "+4 to +8 days (simulated)")
-  - Polymer/Risk slope impact
-  - Confidence level
-- **Impact Preview**: Shows delta when action marked Done
+- **Effort Level**: Low / Med / High
+- **Trigger Section**: Metric, current vs baseline, band, deviation, time window
+- **Where**: Asset tags (G8, G9, V-014, V-022, etc.)
+- **Checklist**: Numbered specific steps
+- **Impact (Simulated)**: Run length gain, polymer slope, CI tightening
+- **Evidence Section**: Add note + attach evidence (placeholder)
 
-### F) Actions Change Outcomes
-When a user marks an action **Done**:
-- **Immediately reflects** in:
-  - Predicted run end window (shifts later)
-  - Confidence interval (tightens)
-  - Polymer burden slope (flattens)
-  - Health score (improves)
-- **Impact bar** shows: "+6 days, +3 health"
+**Action Buttons**:
+- Acknowledge (eye icon)
+- Mark Done (green, applies impact)
+- Not Feasible (red, opens reason dialog)
 
-### G) Chart Texture (Eventful)
-Output trajectory chart includes:
-- **Dual axis**: Output (TPD) + Polymer (kg/day)
-- **Event markers**: Reference lines for operational events
-- **Event legend**: Recent events with severity badges
+**Not Feasible Reasons**:
+- Utility constraint
+- Equipment issue
+- Manpower
+- Process limitation
+- Unknown
 
-### H) Simulator with Meaningful Deltas
-4 Operating Levers:
-1. **Cleaning Cadence**: Baseline / +1 / +2 cycles/week
-2. **Inhibitor Dose Index**: 0.9 - 1.3
-3. **Flush Frequency**: Baseline / +1 per day
-4. **Intervention Discipline**: Low / Medium / High
+**Closed-Loop Feedback**: When marking "Done":
+- Toast notification
+- Green completion banner: "Completed - Impact applied to forecast"
+- Outcome Delta Panel shows cumulative impact (Run Extended, Health Improved, Polymer Flattened, CI Tightened)
 
-Results show clear Before → After with delta badges.
+### D) Plan & Commit - Scenario Cards
+4 distinct scenarios:
+1. **Baseline Discipline** (Low Effort): Continue current practices, +0 days
+2. **Proactive Protection** (Medium): Enhanced monitoring + preemptive maintenance, +8 days
+3. **Run Rescue** (High): Aggressive intervention for elevated risk, +14 days
+4. **Custom** (Variable): Configure specific operating levers
 
-## Navigation (2 Items Only)
-1. **Mission Control** - The cockpit (default) with embedded Evidence drawer
-2. **Simulator** - What-if scenarios
+**Scenario Comparison View**:
+- Current Trajectory vs With Scenario
+- Forecast End (P50)
+- Days Remaining
+- Expected Output (P50)
+- Confidence Interval
+
+**Custom Levers Panel** (when Custom selected):
+- Cleaning Cadence: Baseline / +1/wk / +2/wk
+- Inhibitor Dose Index: Slider 0.9-1.3
+- Flush Frequency: Baseline / +1/day / +2/day
+- Intervention Discipline: Low / Medium / High
+
+**Intervention Windows & Output Delivery**:
+- Timeline chart showing baseline vs scenario cumulative output
+- Recommended intervention windows with dates and reasons
+- Optional intervention windows
+
+### E) Day Selector
+- Default landing: **Day 70** (Critical - Rescue window)
+- Slider: 1-111 days
+- Quick chips: **7** (Early), **30** (Mid), **52** (Mid-Late), **70** (Critical), **96** (Late), **110** (End)
+
+### F) Terminology Updates
+- "Golden Run" replaced with "Benchmark Run" / "Best Run"
+- "Golden Gap" replaced with "Ahead/Behind Best"
 
 ## API Endpoints
 - `GET /api/` - Health check
-- `GET /api/run-info` - Golden run metadata
-- `GET /api/day/{day}` - Day metrics with P10/P50/P90, golden gap
-- `GET /api/time-series` - Historical data
+- `GET /api/run-info` - Run metadata
+- `GET /api/day/{day}` - Day metrics with actions, P10/P50/P90
+- `GET /api/time-series` - Historical series (1-111)
 - `GET /api/what-changed/{day}` - Last 7 days changes
-- `GET /api/events` - Events, shift logs, pipeline status
-- `GET /api/quick-days` - Jump to moments (7, 30, 52, 70, 96, 110)
+- `GET /api/events` - Events, shift logs, lab results, pipeline status
+- `GET /api/quick-days` - Jump to critical moments
 - `GET /api/scenario-comparison/{day}` - Do Nothing vs Execute Moves
-- `POST /api/apply-action-impact/{day}` - Calculate metrics after actions
+- `POST /api/apply-action-impact/{day}` - Apply completed actions
 - `POST /api/simulate` - What-if simulation
-- `GET /api/actions/statuses` - All action statuses
+- `GET /api/intervention-window/{day}` - Recommended intervention window
+- `GET /api/actions/statuses` - All persisted action statuses
 - `POST /api/actions/{action_id}/status` - Update action status
+- `DELETE /api/actions/statuses/clear` - Clear all statuses (demo reset)
 
-## Testing Results (V2.2)
+## Testing Results (V3.0)
 - Backend: 100% (37/37 tests passed)
-- Frontend: 100% (14/14 tests passed)
-- All Decision Instrument features verified
+- Frontend: 100% (all V3 features verified)
 
 ## Files Reference
 - Backend: `/app/backend/server.py`
 - Data: `/app/data/sim/run_seed.json`, `/app/data/sim/ops_events.json`
-- Frontend: `/app/frontend/src/App.js`, `/app/frontend/src/pages/MissionControl.js`, `Simulator.js`
+- Frontend: 
+  - `/app/frontend/src/App.js` (Main layout, context, navigation)
+  - `/app/frontend/src/pages/MissionControl.js` (Hero triptych, commitment box)
+  - `/app/frontend/src/pages/ActionsRequired.js` (Action workbench)
+  - `/app/frontend/src/pages/PlanCommit.js` (Scenario planning)
 - Styles: `/app/frontend/src/App.css`
 
-## Completed in V2.2
-- [x] Default landing Day 70 (critical moment)
-- [x] Quick jump buttons: 7, 30, 52, 70, 96, 110
-- [x] Golden Gap tile with on-track/behind status
-- [x] Commitment View with P90/P50/P10 outputs
-- [x] Scenario toggle (Do Nothing vs Execute Moves)
-- [x] Actions with Protects, Trigger, Deviation, Assets, Checklist
-- [x] Actions change outcomes immediately when marked Done
-- [x] Output chart with event markers
-- [x] Simulator with meaningful deltas
-- [x] "Prototype / Simulated" labels
+## Completed in V3.0
+- [x] 3-tab navigation (Mission Control, Actions Required, Plan & Commit)
+- [x] Hero Triptych with 3 charts (Run End, Output, Polymer)
+- [x] Commitment Box with P90/P50 metrics and shutdown window
+- [x] Priority Actions Preview with top 3 actions
+- [x] Actions grouped by horizon (Now, Next 24h, This week)
+- [x] Detailed action cards with triggers, checklists, impacts
+- [x] Mark Done with closed-loop feedback (Outcome Delta Panel)
+- [x] Not Feasible with 5 reason codes
+- [x] 4 scenario cards (Baseline, Proactive, Rescue, Custom)
+- [x] Custom scenario levers panel
+- [x] Scenario comparison (Current vs With Scenario)
+- [x] Intervention Windows timeline
+- [x] Day selector with quick chips (7, 30, 52, 70, 96, 110)
+- [x] Benchmark Run terminology (replaced Golden Run)
+- [x] Simulated/Demo labels throughout
 
-## Next Action Items
+## Next Action Items (P0/P1)
 1. Add shift handover report export with commitment summary
-2. Real-time data pipeline integration (replace simulation)
-3. Multi-run comparison view
-4. Mobile-responsive design
+2. Persist scenario selections across sessions
+3. Add "Re-run simulation" button after actions change
+4. Historical trend comparison for intervention windows
 
-## Backlog
+## Backlog (P2)
+- Real-time data pipeline integration (replace simulation)
+- Multi-run comparison view
+- Mobile-responsive design
 - Historical run analysis
 - ML model integration for predictions
 - Role-based access (ED vs Operator views)
 - Alerting system for critical events
+- Evidence attachment functionality (currently placeholder)
