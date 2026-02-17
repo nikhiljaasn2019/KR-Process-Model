@@ -474,3 +474,167 @@ function generateTimelineData(currentDay, dayData, impacts) {
   
   return data;
 }
+
+// ========== ACTION PLAYBOOK COMPONENT ==========
+function ActionPlaybook({ scenario, scenarioData }) {
+  // Define playbooks for each scenario
+  const playbooks = {
+    baseline: {
+      immediate: [
+        "Continue current monitoring routines",
+        "Log all standard readings as scheduled"
+      ],
+      next24h: [
+        "Complete routine inspection checklist",
+        "Review overnight trend reports"
+      ],
+      next72h: [
+        "Standard weekly maintenance tasks"
+      ],
+      guardrails: [
+        { metric: "Polymer Burden", threshold: "< 800 kg/day" },
+        { metric: "Filter ΔP", threshold: "< 0.5 bar" },
+        { metric: "Output Rate", threshold: "> 320 tpd" }
+      ]
+    },
+    proactive: {
+      immediate: [
+        "Review all active polymer burden trends on V-014, V-022",
+        "Check filter differential pressure on G8, G9 — flag if > 0.8 bar",
+        "Confirm inhibitor injection rates at spec (±2%)"
+      ],
+      next24h: [
+        "Schedule preventive filter inspection if DP trending > 0.6 bar",
+        "Increase polymer sampling frequency to 4h intervals",
+        "Brief operations team on enhanced monitoring protocol"
+      ],
+      next72h: [
+        "Execute flush cycle if polymer > 500 kg/day sustained 48h",
+        "Plan ahead: confirm spares availability for filter swap"
+      ],
+      guardrails: [
+        { metric: "Polymer Burden", threshold: "< 600 kg/day" },
+        { metric: "Filter ΔP", threshold: "< 0.8 bar" },
+        { metric: "Inhibitor Rate", threshold: "±2% of target" },
+        { metric: "Temperature Delta", threshold: "< 5°C from setpoint" }
+      ]
+    },
+    rescue: {
+      immediate: [
+        "DECLARE 'Run Rescue Mode' in shift log — triggers enhanced monitoring",
+        "Initiate emergency flush cycle on G8 (20 min, max pressure)",
+        "Swap G9 filter element if DP > 1.0 bar"
+      ],
+      next24h: [
+        "Increase inhibitor dose by 8% for next 72h",
+        "Reduce temperature bands on V-014, V-022 by 1°C",
+        "Hourly DP checks on all filters (log every reading)"
+      ],
+      next72h: [
+        "Evaluate: if polymer slope doesn't flatten, escalate to ED",
+        "Plan contingency: potential early shutdown window review"
+      ],
+      guardrails: [
+        { metric: "Polymer Burden", threshold: "MUST flatten within 48h" },
+        { metric: "Filter ΔP", threshold: "< 1.2 bar critical limit" },
+        { metric: "Inhibitor Rate", threshold: "+8% sustained" },
+        { metric: "Output Rate", threshold: "Accept 5% reduction if needed" }
+      ]
+    },
+    custom: {
+      immediate: [
+        "Apply custom lever settings to control system",
+        "Monitor immediate response on key variables"
+      ],
+      next24h: [
+        "Validate lever adjustments achieving expected effect",
+        "Fine-tune based on 24h trend response"
+      ],
+      next72h: [
+        "Full impact assessment after 72h",
+        "Adjust or revert based on outcomes"
+      ],
+      guardrails: [
+        { metric: "Custom limits", threshold: "As configured" },
+        { metric: "Safety margins", threshold: "Standard" }
+      ]
+    }
+  };
+
+  const playbook = playbooks[scenario] || playbooks.baseline;
+
+  return (
+    <div className="playbook-section" data-testid="action-playbook">
+      <div className="playbook-header">
+        <h3 className="playbook-title">
+          <CheckCircle size={18} />
+          Action Playbook: {scenarioData.name}
+        </h3>
+        <span className="playbook-effort">Effort: {scenarioData.effort}</span>
+      </div>
+
+      <div className="playbook-columns">
+        <div className="playbook-column">
+          <div className="playbook-column-title">
+            Immediate
+            <span className="time-label">This shift</span>
+          </div>
+          <div className="playbook-steps">
+            {playbook.immediate.map((step, idx) => (
+              <div key={idx} className="playbook-step">
+                <span className="playbook-step-number">{idx + 1}</span>
+                <span>{step}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="playbook-column">
+          <div className="playbook-column-title">
+            Next 24h
+            <span className="time-label">High priority</span>
+          </div>
+          <div className="playbook-steps">
+            {playbook.next24h.map((step, idx) => (
+              <div key={idx} className="playbook-step">
+                <span className="playbook-step-number">{idx + 1}</span>
+                <span>{step}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="playbook-column">
+          <div className="playbook-column-title">
+            Next 72h
+            <span className="time-label">Follow-up</span>
+          </div>
+          <div className="playbook-steps">
+            {playbook.next72h.map((step, idx) => (
+              <div key={idx} className="playbook-step">
+                <span className="playbook-step-number">{idx + 1}</span>
+                <span>{step}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="playbook-column guardrails">
+          <div className="guardrails-section">
+            <div className="guardrails-title">
+              <AlertTriangle size={14} />
+              Guardrails / Thresholds
+            </div>
+            {playbook.guardrails.map((g, idx) => (
+              <div key={idx} className="guardrail-item">
+                <span>{g.metric}</span>
+                <span className="guardrail-value">{g.threshold}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
