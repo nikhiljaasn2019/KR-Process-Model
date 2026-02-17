@@ -448,7 +448,7 @@ class TestScenarioComparison:
         do_nothing = data["do_nothing"]
         assert "predicted_remaining_days" in do_nothing
         assert "forecast_end_day" in do_nothing
-        assert "golden_gap_days" in do_nothing
+        assert "benchmark_gap_days" in do_nothing
         assert "run_health_score" in do_nothing
         assert "output_p50_tons" in do_nothing
         assert "output_p90_tons" in do_nothing
@@ -459,14 +459,14 @@ class TestScenarioComparison:
         # Verify execute_moves scenario
         execute_moves = data["execute_moves"]
         assert "predicted_remaining_days" in execute_moves
-        assert "golden_gap_days" in execute_moves
+        assert "benchmark_gap_days" in execute_moves
         assert "run_health_score" in execute_moves
         
         # Verify deltas
         deltas = data["deltas"]
         assert "remaining_days" in deltas
         assert "health_score" in deltas
-        assert "golden_gap" in deltas
+        assert "benchmark_gap" in deltas
         assert "output_p50" in deltas
         
         # Execute moves should improve metrics
