@@ -39,6 +39,7 @@ class SimulationEngine:
     """
     Deterministic simulation engine for KR AA Run Health prototype.
     Generates daily time-series using piecewise linear interpolation + jitter + events.
+    All dates are computed relative to TODAY so they appear future-looking.
     """
     
     def __init__(self, seed: int = 42):
@@ -48,6 +49,10 @@ class SimulationEngine:
         self.events = OPS_EVENTS["events"]
         self.golden_run = RUN_SEED["golden_run_candidate"]
         self.target_days = RUN_SEED["kpi_targets"]["target_run_length_days"]
+        self.benchmark_run_length = 111  # Current Best Run length
+        # Date logic: Run starts (currentDay - 1) days before today
+        # This makes all dates appear plausible and future-looking
+        self._today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         self.start_date = datetime.fromisoformat(self.golden_run["start_ts"].replace("+05:30", "+05:30"))
         
         # Pre-generate full time series
